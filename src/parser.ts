@@ -46,12 +46,17 @@ import {
   Int64,
   Float32,
   Float64,
+  Decimal,
   String,
   Date,
+  Date32,
   DateTime,
   DateTime64,
   UUID,
   Bool,
+  IPv4,
+  IPv6,
+  JSONType,
   Array,
   Tuple,
   Map,
@@ -60,6 +65,8 @@ import {
   Enum8,
   Enum16,
   FixedString,
+  AggregateFunction,
+  SimpleAggregateFunction,
   ClickHouseLexer,
 } from './tokens.js'
 import { DDLTable, DDLColumn } from './ast.js'
@@ -114,12 +121,17 @@ class ClickHouseParser extends CstParser {
         Int64,
         Float32,
         Float64,
+        Decimal,
         String,
         Date,
+        Date32,
         DateTime,
         DateTime64,
         UUID,
         Bool,
+        IPv4,
+        IPv6,
+        JSONType,
         Array,
         Tuple,
         Map,
@@ -128,6 +140,8 @@ class ClickHouseParser extends CstParser {
         Enum8,
         Enum16,
         FixedString,
+        AggregateFunction,
+        SimpleAggregateFunction,
       ],
       { recoveryEnabled: true },
     )
@@ -305,6 +319,18 @@ class ClickHouseParser extends CstParser {
           this.CONSUME(RBracket)
         },
       },
+      {
+        // Tuple literal (val1, val2, ...)
+        ALT: () => {
+          this.CONSUME4(LParen)
+          this.SUBRULE7(this.simpleExpression)
+          this.AT_LEAST_ONE(() => {
+            this.CONSUME4(Comma)
+            this.SUBRULE8(this.simpleExpression)
+          })
+          this.CONSUME4(RParen)
+        },
+      },
     ])
   })
 
@@ -360,12 +386,17 @@ class ClickHouseParser extends CstParser {
       { ALT: () => this.CONSUME(Int64) },
       { ALT: () => this.CONSUME(Float32) },
       { ALT: () => this.CONSUME(Float64) },
+      { ALT: () => this.SUBRULE(this.decimalType) },
       { ALT: () => this.CONSUME(String) },
+      { ALT: () => this.CONSUME(Date32) },
       { ALT: () => this.CONSUME(Date) },
       { ALT: () => this.CONSUME(DateTime) },
       { ALT: () => this.CONSUME(DateTime64) },
       { ALT: () => this.CONSUME(UUID) },
       { ALT: () => this.CONSUME(Bool) },
+      { ALT: () => this.CONSUME(IPv4) },
+      { ALT: () => this.CONSUME(IPv6) },
+      { ALT: () => this.CONSUME(JSONType) },
       { ALT: () => this.SUBRULE(this.arrayType) },
       { ALT: () => this.SUBRULE(this.tupleType) },
       { ALT: () => this.SUBRULE(this.mapType) },
@@ -373,6 +404,8 @@ class ClickHouseParser extends CstParser {
       { ALT: () => this.SUBRULE(this.lowCardinalityType) },
       { ALT: () => this.SUBRULE(this.enumType) },
       { ALT: () => this.SUBRULE(this.fixedStringType) },
+      { ALT: () => this.SUBRULE(this.aggregateFunctionType) },
+      { ALT: () => this.SUBRULE(this.simpleAggregateFunctionType) },
       { ALT: () => this.CONSUME(Identifier) }, // fallback for other types
     ])
     this.OPTION(() => {
@@ -453,6 +486,33 @@ class ClickHouseParser extends CstParser {
     this.CONSUME(FixedString)
     this.CONSUME(LParen)
     this.CONSUME(NumberLiteral)
+    this.CONSUME(RParen)
+  })
+
+  private decimalType = this.RULE('decimalType', () => {
+    this.CONSUME(Decimal)
+    this.CONSUME(LParen)
+    this.CONSUME(NumberLiteral) // precision
+    this.CONSUME(Comma)
+    this.CONSUME2(NumberLiteral) // scale
+    this.CONSUME(RParen)
+  })
+
+  private aggregateFunctionType = this.RULE('aggregateFunctionType', () => {
+    this.CONSUME(AggregateFunction)
+    this.CONSUME(LParen)
+    this.CONSUME(Identifier) // function name (sum, avg, etc.)
+    this.CONSUME(Comma)
+    this.SUBRULE(this.type) // inner type
+    this.CONSUME(RParen)
+  })
+
+  private simpleAggregateFunctionType = this.RULE('simpleAggregateFunctionType', () => {
+    this.CONSUME(SimpleAggregateFunction)
+    this.CONSUME(LParen)
+    this.CONSUME(Identifier) // function name (sum, avg, max, min, etc.)
+    this.CONSUME(Comma)
+    this.SUBRULE(this.type) // inner type
     this.CONSUME(RParen)
   })
 
@@ -679,16 +739,40 @@ function extractType(typeNode: any): { type: string; nullable: boolean } {
     return { type: `FixedString(${size})`, nullable }
   }
 
+  if (typeNode.children.decimalType) {
+    const decNode = typeNode.children.decimalType[0]
+    const numbers = findTokensOfType(decNode, 'NumberLiteral')
+    const precision = numbers[0]?.image || ''
+    const scale = numbers[1]?.image || ''
+    return { type: `Decimal(${precision}, ${scale})`, nullable }
+  }
+
+  if (typeNode.children.aggregateFunctionType) {
+    const aggNode = typeNode.children.aggregateFunctionType[0]
+    const funcName = findTokenOfType(aggNode, 'Identifier')?.image || ''
+    const innerType = extractType(aggNode.children.type[0]).type
+    return { type: `AggregateFunction(${funcName}, ${innerType})`, nullable }
+  }
+
+  if (typeNode.children.simpleAggregateFunctionType) {
+    const aggNode = typeNode.children.simpleAggregateFunctionType[0]
+    const funcName = findTokenOfType(aggNode, 'Identifier')?.image || ''
+    const innerType = extractType(aggNode.children.type[0]).type
+    return { type: `SimpleAggregateFunction(${funcName}, ${innerType})`, nullable }
+  }
+
   // Simple types
   const typeTokenNames = [
     'UInt8', 'UInt16', 'UInt32', 'UInt64',
     'Int8', 'Int16', 'Int32', 'Int64',
-    'Float32', 'Float64', 'String', 'Date', 'DateTime', 'DateTime64', 'UUID', 'Bool'
+    'Float32', 'Float64', 'String', 'Date', 'Date32', 'DateTime', 'DateTime64',
+    'UUID', 'Bool', 'IPv4', 'IPv6', 'JSONType'
   ]
 
   for (const tokenName of typeTokenNames) {
     const token = findTokenOfType(typeNode, tokenName)
     if (token) {
+      // Use the token image for the output (which is 'JSON' not 'JSONType')
       return { type: token.image, nullable }
     }
   }

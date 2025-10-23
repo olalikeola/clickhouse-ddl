@@ -40,6 +40,8 @@ export const Star = createToken({ name: 'Star', pattern: /\*/ })
 export const Slash = createToken({ name: 'Slash', pattern: /\// })
 
 // ClickHouse specific data types - ORDER MATTERS! More specific first
+export const SimpleAggregateFunction = createToken({ name: 'SimpleAggregateFunction', pattern: /SimpleAggregateFunction(?![a-zA-Z0-9_])/i })
+export const AggregateFunction = createToken({ name: 'AggregateFunction', pattern: /AggregateFunction(?![a-zA-Z0-9_])/i })
 export const DateTime64 = createToken({ name: 'DateTime64', pattern: /DateTime64(?![a-zA-Z0-9_])/i })
 export const DateTime = createToken({ name: 'DateTime', pattern: /DateTime(?![a-zA-Z0-9_])/i })
 export const Date = createToken({ name: 'Date', pattern: /Date(?![a-zA-Z0-9_])/i })
@@ -63,9 +65,14 @@ export const Int16 = createToken({ name: 'Int16', pattern: /Int16(?![a-zA-Z0-9_]
 export const Int8 = createToken({ name: 'Int8', pattern: /Int8(?![a-zA-Z0-9_])/i })
 export const Float64 = createToken({ name: 'Float64', pattern: /Float64(?![a-zA-Z0-9_])/i })
 export const Float32 = createToken({ name: 'Float32', pattern: /Float32(?![a-zA-Z0-9_])/i })
+export const Decimal = createToken({ name: 'Decimal', pattern: /Decimal(?![a-zA-Z0-9_])/i })
 export const String = createToken({ name: 'String', pattern: /String(?![a-zA-Z0-9_])/i })
 export const UUID = createToken({ name: 'UUID', pattern: /UUID(?![a-zA-Z0-9_])/i })
 export const Bool = createToken({ name: 'Bool', pattern: /Bool(?![a-zA-Z0-9_])/i })
+export const IPv4 = createToken({ name: 'IPv4', pattern: /IPv4(?![a-zA-Z0-9_])/i })
+export const IPv6 = createToken({ name: 'IPv6', pattern: /IPv6(?![a-zA-Z0-9_])/i })
+export const JSONType = createToken({ name: 'JSONType', pattern: /JSON(?![a-zA-Z0-9_])/i })
+export const Date32 = createToken({ name: 'Date32', pattern: /Date32(?![a-zA-Z0-9_])/i })
 
 // Others
 export const LineComment = createToken({ name: 'LineComment', pattern: /--[^\n\r]*/, group: Lexer.SKIPPED })
@@ -113,8 +120,11 @@ export const allTokens = [
   Star,
   Slash,
   // Data types in order of specificity (most specific first)
+  SimpleAggregateFunction,
+  AggregateFunction,
   DateTime64,
   DateTime,
+  Date32,
   Date,
   Array,
   Tuple,
@@ -134,9 +144,13 @@ export const allTokens = [
   Int8,
   Float64,
   Float32,
+  Decimal,
   String,
   UUID,
   Bool,
+  IPv4,
+  IPv6,
+  JSONType,
   StringLiteral,
   NumberLiteral,
   BacktickIdentifier,
