@@ -194,9 +194,35 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
         timestamp DateTime
       ) ENGINE = MergeTree()
       PARTITION BY toYYYYMM(timestamp)`
-      
+
       const result = parse(sql)
       expect(result.partitionBy).toBe('toYYYYMM(timestamp)')
+    })
+
+    it('parses PARTITION BY + ORDER BY combination', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64,
+        timestamp DateTime
+      ) ENGINE = MergeTree()
+      PARTITION BY toYYYYMM(timestamp)
+      ORDER BY id, timestamp`
+
+      const result = parse(sql)
+      expect(result.partitionBy).toBe('toYYYYMM(timestamp)')
+      expect(result.orderBy).toEqual(['id', 'timestamp'])
+    })
+
+    it('parses complex PARTITION BY + ORDER BY with expressions', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64,
+        plan_name String,
+        created_at DateTime
+      ) ENGINE = MergeTree()
+      PARTITION BY (toYYYYMMDD(created_at), if(plan_name = 'free', 'free', 'paid'))
+      ORDER BY id, plan_name`
+
+      const result = parse(sql)
+      expect(result.orderBy).toEqual(['id', 'plan_name'])
     })
 
     it('parses SETTINGS clause', () => {
@@ -232,8 +258,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
           status Enum8('active' = 1, 'inactive' = 0) DEFAULT 'active',
           created_at DateTime COMMENT 'Creation timestamp'
         ) ENGINE = MergeTree()
-        ORDER BY (user_id, timestamp)
         PARTITION BY toYYYYMM(timestamp)
+        ORDER BY (user_id, timestamp)
         SETTINGS index_granularity = 8192, merge_with_ttl_timeout = 86400
       `
       
@@ -411,8 +437,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
         status Enum8('active' = 1, 'inactive' = 0) DEFAULT 'active',
         created_at DateTime COMMENT 'Creation timestamp'
       ) ENGINE = MergeTree()
-      ORDER BY (user_id, timestamp)
       PARTITION BY toYYYYMM(timestamp)
+      ORDER BY (user_id, timestamp)
       SETTINGS index_granularity = 8192, merge_with_ttl_timeout = 86400`
       
       const result = parse(sql)

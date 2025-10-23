@@ -176,11 +176,11 @@ class ClickHouseParser extends CstParser {
     })
 
     this.OPTION4(() => {
-      this.SUBRULE(this.orderByClause)
+      this.SUBRULE(this.partitionByClause)
     })
 
     this.OPTION5(() => {
-      this.SUBRULE(this.partitionByClause)
+      this.SUBRULE(this.orderByClause)
     })
 
     this.OPTION6(() => {
