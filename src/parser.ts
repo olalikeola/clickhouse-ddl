@@ -10,6 +10,7 @@ import {
   LBracket,
   RBracket,
   Comma,
+  Dot,
   Identifier,
   Engine,
   Equals,
@@ -71,6 +72,7 @@ class ClickHouseParser extends CstParser {
         LBracket,
         RBracket,
         Comma,
+        Dot,
         Identifier,
         Engine,
         Equals,
@@ -132,7 +134,7 @@ class ClickHouseParser extends CstParser {
       this.CONSUME(Not)
       this.CONSUME(Exists)
     })
-    this.CONSUME(Identifier) // table name
+    this.SUBRULE(this.qualifiedTableName) // table name (qualified or unqualified)
 
     this.CONSUME(LParen) // table start paren
     this.SUBRULE(this.columns)
@@ -152,6 +154,20 @@ class ClickHouseParser extends CstParser {
 
     this.OPTION5(() => {
       this.SUBRULE(this.settingsClause)
+    })
+  })
+
+  private qualifiedTableName = this.RULE('qualifiedTableName', () => {
+    this.OR([
+      { ALT: () => this.CONSUME(Identifier) }, // schema or table name as identifier
+      { ALT: () => this.CONSUME(Table) } // table name as table keyword
+    ])
+    this.OPTION(() => {
+      this.CONSUME(Dot) // dot separator
+      this.OR2([
+        { ALT: () => this.CONSUME2(Identifier) }, // table name as identifier
+        { ALT: () => this.CONSUME2(Table) } // table name as table keyword
+      ])
     })
   })
 
@@ -395,8 +411,32 @@ export function parse(sql: string): DDLTable {
 
   // Enhanced CST -> AST transformer
   const create = (cst.children as any).createTable[0]
-  const identifierToken = findTokenOfType(create, 'Identifier') as IToken
-  const tableName = identifierToken.image
+  
+  // Handle qualified table names (schema.table or just table)
+  const qualifiedTableName = create.children.qualifiedTableName[0]
+  const identifierTokens = findTokensOfType(qualifiedTableName, 'Identifier')
+  const tableTokens = findTokensOfType(qualifiedTableName, 'Table')
+  
+  let tableName: string
+  if (identifierTokens.length === 2) {
+    // schema.table format with both identifiers
+    tableName = `${identifierTokens[0].image}.${identifierTokens[1].image}`
+  } else if (identifierTokens.length === 1 && tableTokens.length === 1) {
+    // schema.table format with identifier and table keyword
+    tableName = `${identifierTokens[0].image}.${tableTokens[0].image}`
+  } else if (tableTokens.length === 2) {
+    // schema.table format with both table keywords
+    tableName = `${tableTokens[0].image}.${tableTokens[1].image}`
+  } else if (identifierTokens.length === 1 && tableTokens.length === 0) {
+    // just table name as identifier
+    tableName = identifierTokens[0].image
+  } else if (tableTokens.length === 1 && identifierTokens.length === 0) {
+    // just table name as table keyword
+    tableName = tableTokens[0].image
+  } else {
+    // fallback
+    tableName = identifierTokens[0]?.image || tableTokens[0]?.image || 'unknown'
+  }
 
   const columnNodes = (create.children.columns[0].children as any).column
   const columns: DDLColumn[] = columnNodes.map((colNode: any) => {

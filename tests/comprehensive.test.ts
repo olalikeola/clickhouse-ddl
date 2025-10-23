@@ -339,6 +339,131 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     })
   })
 
+  describe('Schema-Qualified Table Names', () => {
+    it('parses schema-qualified table names', () => {
+      const sql = `CREATE TABLE socket.users (
+        id UInt64,
+        name String
+      ) ENGINE = MergeTree()`
+      
+      const result = parse(sql)
+      expect(result.name).toBe('socket.users')
+      expect(result.columns).toHaveLength(2)
+    })
+
+    it('parses database-qualified table names', () => {
+      const sql = `CREATE TABLE analytics.events (
+        id UInt64,
+        timestamp DateTime
+      ) ENGINE = MergeTree()`
+      
+      const result = parse(sql)
+      expect(result.name).toBe('analytics.events')
+      expect(result.columns).toHaveLength(2)
+    })
+
+    it('parses schema-qualified table with IF NOT EXISTS', () => {
+      const sql = `CREATE TABLE IF NOT EXISTS production.users (
+        id UInt64,
+        email String
+      ) ENGINE = MergeTree()`
+      
+      const result = parse(sql)
+      expect(result.name).toBe('production.users')
+      expect(result.columns).toHaveLength(2)
+    })
+
+    it('parses schema-qualified table with complex features', () => {
+      const sql = `CREATE TABLE IF NOT EXISTS staging.events (
+        id UInt64,
+        user_id UInt64,
+        event_name String DEFAULT 'unknown',
+        timestamp DateTime DEFAULT now(),
+        properties Map(String, String),
+        tags Array(String),
+        metadata Nested(
+          key String,
+          value String
+        ),
+        computed_score UInt64 MATERIALIZED user_id * 100,
+        display_name ALIAS event_name,
+        status Enum8('active' = 1, 'inactive' = 0) DEFAULT 'active',
+        created_at DateTime COMMENT 'Creation timestamp'
+      ) ENGINE = MergeTree()
+      ORDER BY (user_id, timestamp)
+      PARTITION BY toYYYYMM(timestamp)
+      SETTINGS index_granularity = 8192, merge_with_ttl_timeout = 86400`
+      
+      const result = parse(sql)
+      
+      // Basic structure
+      expect(result.name).toBe('staging.events')
+      expect(result.columns).toHaveLength(11)
+      expect(result.engine).toBe('MergeTree')
+      
+      // Order by
+      expect(result.orderBy).toEqual(['user_id', 'timestamp'])
+      
+      // Partition by
+      expect(result.partitionBy).toBe('toYYYYMM(timestamp)')
+      
+      // Settings
+      expect(result.settings).toEqual({
+        'index_granularity': '8192',
+        'merge_with_ttl_timeout': '86400'
+      })
+      
+      // Column types
+      expect(result.columns[0].type).toBe('UInt64')
+      expect(result.columns[4].type).toBe('Map(String, String)')
+      expect(result.columns[5].type).toBe('Array(String)')
+      expect(result.columns[6].type).toBe('Nested(key String, value String)')
+      
+      // Materialized column
+      expect(result.columns[7].materialized).toBe('user_id * 100')
+      
+      // Alias column
+      expect(result.columns[8].alias).toBe('event_name')
+      
+      // Default values
+      expect(result.columns[2].default).toBe("'unknown'")
+      expect(result.columns[3].default).toBe('now()')
+      expect(result.columns[9].default).toBe("'active'")
+      
+      // Comments
+      expect(result.columns[10].comment).toBe('Creation timestamp')
+    })
+
+    it('handles both qualified and unqualified names in same parser', () => {
+      // Test that the parser can handle both formats
+      const qualifiedSQL = `CREATE TABLE schema.table (id UInt64) ENGINE = MergeTree()`
+      const unqualifiedSQL = `CREATE TABLE table (id UInt64) ENGINE = MergeTree()`
+      
+      const qualifiedResult = parse(qualifiedSQL)
+      const unqualifiedResult = parse(unqualifiedSQL)
+      
+      expect(qualifiedResult.name).toBe('schema.table')
+      expect(unqualifiedResult.name).toBe('table')
+    })
+
+    it('parses qualified names with complex data types', () => {
+      const sql = `CREATE TABLE data.analytics (
+        id UInt64,
+        coordinates Tuple(Float64, Float64),
+        metadata Map(String, String),
+        tags Array(String),
+        status LowCardinality(Enum8('active' = 1, 'inactive' = 0))
+      ) ENGINE = MergeTree()`
+      
+      const result = parse(sql)
+      expect(result.name).toBe('data.analytics')
+      expect(result.columns[1].type).toBe('Tuple(Float64, Float64)')
+      expect(result.columns[2].type).toBe('Map(String, String)')
+      expect(result.columns[3].type).toBe('Array(String)')
+      expect(result.columns[4].type).toBe('LowCardinality(Enum8(\'active\' = 1, \'inactive\' = 0))')
+    })
+  })
+
   describe('Error Handling', () => {
     it('throws error for invalid SQL', () => {
       const sql = `INVALID SQL STATEMENT`
