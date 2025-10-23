@@ -123,6 +123,30 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.columns[2].default).toBe('now()')
     })
 
+    it('parses negative numbers in DEFAULT values', () => {
+      const sql = `CREATE TABLE test (
+        int_val Int64 DEFAULT -1,
+        float_val Float64 DEFAULT -1.5,
+        computed UInt64 DEFAULT toUInt64(-1)
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe('- 1')
+      expect(result.columns[1].default).toBe('- 1.5')
+      expect(result.columns[2].default).toBe('toUInt64(- 1)')
+    })
+
+    it('parses positive numbers with unary plus in DEFAULT values', () => {
+      const sql = `CREATE TABLE test (
+        int_val Int64 DEFAULT +1,
+        float_val Float64 DEFAULT +1.5
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe('+ 1')
+      expect(result.columns[1].default).toBe('+ 1.5')
+    })
+
     it('parses MATERIALIZED columns', () => {
       const sql = `CREATE TABLE test (
         id UInt64,

@@ -289,17 +289,27 @@ class ClickHouseParser extends CstParser {
   private expressionTerm = this.RULE('expressionTerm', () => {
     this.OR([
       {
+        // Unary minus or plus (for negative/positive numbers and expressions)
+        ALT: () => {
+          this.OR2([
+            { ALT: () => this.CONSUME(Minus) },
+            { ALT: () => this.CONSUME(Plus) },
+          ])
+          this.SUBRULE(this.expressionTerm)
+        },
+      },
+      {
         // Regular identifier (with optional function call)
         ALT: () => {
-          this.CONSUME(Identifier)
+          this.CONSUME2(Identifier)
           this.OPTION(() => {
             // Function call
             this.CONSUME(LParen)
             this.OPTION2(() => {
-              this.SUBRULE(this.simpleExpression)
+              this.SUBRULE2(this.simpleExpression)
               this.MANY(() => {
                 this.CONSUME(Comma)
-                this.SUBRULE2(this.simpleExpression)
+                this.SUBRULE3(this.simpleExpression)
               })
             })
             this.CONSUME(RParen)
@@ -314,10 +324,10 @@ class ClickHouseParser extends CstParser {
             // Function call
             this.CONSUME2(LParen)
             this.OPTION4(() => {
-              this.SUBRULE3(this.simpleExpression)
+              this.SUBRULE4(this.simpleExpression)
               this.MANY2(() => {
                 this.CONSUME2(Comma)
-                this.SUBRULE4(this.simpleExpression)
+                this.SUBRULE5(this.simpleExpression)
               })
             })
             this.CONSUME2(RParen)
@@ -330,10 +340,10 @@ class ClickHouseParser extends CstParser {
           this.CONSUME(If)
           this.CONSUME3(LParen)
           this.OPTION5(() => {
-            this.SUBRULE5(this.simpleExpression)
+            this.SUBRULE6(this.simpleExpression)
             this.MANY3(() => {
               this.CONSUME3(Comma)
-              this.SUBRULE6(this.simpleExpression)
+              this.SUBRULE7(this.simpleExpression)
             })
           })
           this.CONSUME3(RParen)
@@ -352,10 +362,10 @@ class ClickHouseParser extends CstParser {
         // Tuple literal (val1, val2, ...)
         ALT: () => {
           this.CONSUME4(LParen)
-          this.SUBRULE7(this.simpleExpression)
+          this.SUBRULE8(this.simpleExpression)
           this.AT_LEAST_ONE(() => {
             this.CONSUME4(Comma)
-            this.SUBRULE8(this.simpleExpression)
+            this.SUBRULE9(this.simpleExpression)
           })
           this.CONSUME4(RParen)
         },
