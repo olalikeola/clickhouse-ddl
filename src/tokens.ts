@@ -13,6 +13,7 @@ export const Nullable = createToken({ name: 'Nullable', pattern: /Nullable(?![a-
 export const Materialized = createToken({ name: 'Materialized', pattern: /MATERIALIZED(?![a-zA-Z0-9_])/i })
 export const Alias = createToken({ name: 'Alias', pattern: /ALIAS(?![a-zA-Z0-9_])/i })
 export const Comment = createToken({ name: 'Comment', pattern: /COMMENT(?![a-zA-Z0-9_])/i })
+export const PrimaryKey = createToken({ name: 'PrimaryKey', pattern: /PRIMARY\s+KEY(?![a-zA-Z0-9_])/i })
 export const OrderBy = createToken({ name: 'OrderBy', pattern: /ORDER\s+BY(?![a-zA-Z0-9_])/i })
 export const PartitionBy = createToken({ name: 'PartitionBy', pattern: /PARTITION\s+BY(?![a-zA-Z0-9_])/i })
 export const Settings = createToken({ name: 'Settings', pattern: /SETTINGS(?![a-zA-Z0-9_])/i })
@@ -98,6 +99,7 @@ export const allTokens = [
   Materialized,
   Alias,
   Comment,
+  PrimaryKey,
   OrderBy,
   PartitionBy,
   Settings,

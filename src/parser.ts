@@ -23,6 +23,7 @@ import {
   Materialized,
   Alias,
   Comment,
+  PrimaryKey,
   OrderBy,
   PartitionBy,
   Settings,
@@ -171,14 +172,18 @@ class ClickHouseParser extends CstParser {
     })
 
     this.OPTION3(() => {
-      this.SUBRULE(this.orderByClause)
+      this.SUBRULE(this.primaryKeyClause)
     })
 
     this.OPTION4(() => {
-      this.SUBRULE(this.partitionByClause)
+      this.SUBRULE(this.orderByClause)
     })
 
     this.OPTION5(() => {
+      this.SUBRULE(this.partitionByClause)
+    })
+
+    this.OPTION6(() => {
       this.SUBRULE(this.settingsClause)
     })
   })
@@ -216,11 +221,18 @@ class ClickHouseParser extends CstParser {
     })
   })
 
-  private orderByClause = this.RULE('orderByClause', () => {
-    this.CONSUME(OrderBy)
+  private primaryKeyClause = this.RULE('primaryKeyClause', () => {
+    this.CONSUME(PrimaryKey)
     this.CONSUME(LParen)
     this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME(Identifier) })
     this.CONSUME(RParen)
+  })
+
+  private orderByClause = this.RULE('orderByClause', () => {
+    this.CONSUME(OrderBy)
+    this.CONSUME2(LParen)
+    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME2(Identifier) })
+    this.CONSUME2(RParen)
   })
 
   private partitionByClause = this.RULE('partitionByClause', () => {

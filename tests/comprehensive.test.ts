@@ -716,6 +716,35 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.name).toBe('test')
       expect(result.engine).toBe('MergeTree')
     })
+
+    it('parses PRIMARY KEY clause', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64,
+        name String
+      ) ENGINE = MergeTree()
+      PRIMARY KEY (id)
+      ORDER BY (id, name)`
+
+      const result = parse(sql)
+      expect(result.name).toBe('test')
+      expect(result.engine).toBe('MergeTree')
+    })
+
+    it('parses production-style table with PRIMARY KEY and ORDER BY', () => {
+      const sql = `CREATE TABLE socket.webhook_events (
+        id UUID,
+        event_type String,
+        payload String,
+        created_at DateTime64(3)
+      ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+      PRIMARY KEY (id)
+      ORDER BY (created_at, id)`
+
+      const result = parse(sql)
+      expect(result.name).toBe('socket.webhook_events')
+      expect(result.engine).toBe('ReplicatedMergeTree')
+      expect(result.columns.length).toBe(4)
+    })
   })
 
   describe('Error Handling', () => {
