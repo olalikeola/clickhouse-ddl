@@ -23,7 +23,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/olalikeola/clickhouse-ddl-parser.git"
+        "url": "https://github.com/olalikeola/clickhouse-ddl.git"
     },
     "license": "MIT",
     "author": "Olayinka Adekola <okakniyalo@gmail.com>",
