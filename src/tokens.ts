@@ -63,6 +63,7 @@ export const Bool = createToken({ name: 'Bool', pattern: /Bool(?![a-zA-Z0-9_])/i
 export const LineComment = createToken({ name: 'LineComment', pattern: /--[^\n\r]*/, group: Lexer.SKIPPED })
 export const NumberLiteral = createToken({ name: 'NumberLiteral', pattern: /[0-9]+(\.[0-9]+)?/ })
 export const StringLiteral = createToken({ name: 'StringLiteral', pattern: /'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"/ })
+export const BacktickIdentifier = createToken({ name: 'BacktickIdentifier', pattern: /`[^`]+`/ })
 export const Identifier = createToken({ name: 'Identifier', pattern: /[a-zA-Z_][a-zA-Z0-9_\$]*/ })
 export const WhiteSpace = createToken({ name: 'WhiteSpace', pattern: /[ \t\n\r]+/, group: Lexer.SKIPPED })
 export const Other = createToken({ name: 'Other', pattern: /[^\s]+/ })
@@ -124,6 +125,7 @@ export const allTokens = [
   Bool,
   StringLiteral,
   NumberLiteral,
+  BacktickIdentifier,
   Identifier,
   Other,
 ]

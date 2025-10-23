@@ -12,6 +12,7 @@ import {
   Comma,
   Dot,
   Identifier,
+  BacktickIdentifier,
   Engine,
   Equals,
   StringLiteral,
@@ -74,6 +75,7 @@ class ClickHouseParser extends CstParser {
         Comma,
         Dot,
         Identifier,
+        BacktickIdentifier,
         Engine,
         Equals,
         StringLiteral,
@@ -160,12 +162,14 @@ class ClickHouseParser extends CstParser {
   private qualifiedTableName = this.RULE('qualifiedTableName', () => {
     this.OR([
       { ALT: () => this.CONSUME(Identifier) }, // schema or table name as identifier
+      { ALT: () => this.CONSUME(BacktickIdentifier) }, // schema or table name as backtick identifier
       { ALT: () => this.CONSUME(Table) } // table name as table keyword
     ])
     this.OPTION(() => {
       this.CONSUME(Dot) // dot separator
       this.OR2([
         { ALT: () => this.CONSUME2(Identifier) }, // table name as identifier
+        { ALT: () => this.CONSUME2(BacktickIdentifier) }, // table name as backtick identifier
         { ALT: () => this.CONSUME2(Table) } // table name as table keyword
       ])
     })
@@ -224,6 +228,7 @@ class ClickHouseParser extends CstParser {
   private expressionTerm = this.RULE('expressionTerm', () => {
     this.OR([
       {
+        // Regular identifier (with optional function call)
         ALT: () => {
           this.CONSUME(Identifier)
           this.OPTION(() => {
@@ -237,6 +242,24 @@ class ClickHouseParser extends CstParser {
               })
             })
             this.CONSUME(RParen)
+          })
+        },
+      },
+      {
+        // Backtick identifier (with optional function call)
+        ALT: () => {
+          this.CONSUME(BacktickIdentifier)
+          this.OPTION3(() => {
+            // Function call
+            this.CONSUME2(LParen)
+            this.OPTION4(() => {
+              this.SUBRULE3(this.simpleExpression)
+              this.MANY2(() => {
+                this.CONSUME2(Comma)
+                this.SUBRULE4(this.simpleExpression)
+              })
+            })
+            this.CONSUME2(RParen)
           })
         },
       },
@@ -257,7 +280,11 @@ class ClickHouseParser extends CstParser {
   })
 
   private column = this.RULE('column', () => {
-    this.CONSUME(Identifier) // column name
+    // Column name can be regular or backtick identifier
+    this.OR([
+      { ALT: () => this.CONSUME(Identifier) },
+      { ALT: () => this.CONSUME(BacktickIdentifier) },
+    ])
 
     // Type is optional for ALIAS columns
     this.OPTION(() => {
@@ -358,7 +385,11 @@ class ClickHouseParser extends CstParser {
   })
 
   private nestedField = this.RULE('nestedField', () => {
-    this.CONSUME(Identifier) // field name
+    // Field name can be regular or backtick identifier
+    this.OR([
+      { ALT: () => this.CONSUME(Identifier) },
+      { ALT: () => this.CONSUME(BacktickIdentifier) },
+    ])
     this.SUBRULE(this.type)
   })
 
@@ -415,33 +446,37 @@ export function parse(sql: string): DDLTable {
   // Handle qualified table names (schema.table or just table)
   const qualifiedTableName = create.children.qualifiedTableName[0]
   const identifierTokens = findTokensOfType(qualifiedTableName, 'Identifier')
+  const backtickTokens = findTokensOfType(qualifiedTableName, 'BacktickIdentifier')
   const tableTokens = findTokensOfType(qualifiedTableName, 'Table')
-  
+
+  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
+  const allIdentifiers = [...identifierTokens, ...backtickTokens].sort((a, b) => a.startOffset - b.startOffset)
+
   let tableName: string
-  if (identifierTokens.length === 2) {
-    // schema.table format with both identifiers
-    tableName = `${identifierTokens[0].image}.${identifierTokens[1].image}`
-  } else if (identifierTokens.length === 1 && tableTokens.length === 1) {
+  if (allIdentifiers.length === 2) {
+    // schema.table format with two identifiers
+    tableName = `${extractIdentifierValue(allIdentifiers[0])}.${extractIdentifierValue(allIdentifiers[1])}`
+  } else if (allIdentifiers.length === 1 && tableTokens.length === 1) {
     // schema.table format with identifier and table keyword
-    tableName = `${identifierTokens[0].image}.${tableTokens[0].image}`
+    tableName = `${extractIdentifierValue(allIdentifiers[0])}.${tableTokens[0].image}`
   } else if (tableTokens.length === 2) {
     // schema.table format with both table keywords
     tableName = `${tableTokens[0].image}.${tableTokens[1].image}`
-  } else if (identifierTokens.length === 1 && tableTokens.length === 0) {
+  } else if (allIdentifiers.length === 1 && tableTokens.length === 0) {
     // just table name as identifier
-    tableName = identifierTokens[0].image
-  } else if (tableTokens.length === 1 && identifierTokens.length === 0) {
+    tableName = extractIdentifierValue(allIdentifiers[0])
+  } else if (tableTokens.length === 1 && allIdentifiers.length === 0) {
     // just table name as table keyword
     tableName = tableTokens[0].image
   } else {
     // fallback
-    tableName = identifierTokens[0]?.image || tableTokens[0]?.image || 'unknown'
+    tableName = allIdentifiers[0] ? extractIdentifierValue(allIdentifiers[0]) : (tableTokens[0]?.image || 'unknown')
   }
 
   const columnNodes = (create.children.columns[0].children as any).column
   const columns: DDLColumn[] = columnNodes.map((colNode: any) => {
-    const nameTok = findTokenOfType(colNode, 'Identifier') as IToken
-    const name = nameTok.image
+    const nameTok = findIdentifierToken(colNode) as IToken
+    const name = extractIdentifierValue(nameTok)
     let type = 'unknown'
     let nullable = false
     let def: string | undefined
@@ -580,7 +615,8 @@ function extractType(typeNode: any): { type: string; nullable: boolean } {
   if (typeNode.children.nestedType) {
     const nestedNode = typeNode.children.nestedType[0]
     const fields = nestedNode.children.nestedField.map((f: any) => {
-      const fieldName = findTokenOfType(f, 'Identifier')?.image || ''
+      const fieldToken = findIdentifierToken(f)
+      const fieldName = fieldToken ? extractIdentifierValue(fieldToken) : ''
       const fieldType = extractType(f.children.type[0]).type
       return `${fieldName} ${fieldType}`
     })
@@ -646,6 +682,20 @@ function findTokenOfType(node: any, typeName: string): IToken | null {
   return null
 }
 
+// Helper function to extract identifier value, stripping backticks if present
+function extractIdentifierValue(token: IToken): string {
+  if (token.tokenType.name === 'BacktickIdentifier') {
+    // Strip leading and trailing backticks
+    return token.image.slice(1, -1)
+  }
+  return token.image
+}
+
+// Helper function to find either Identifier or BacktickIdentifier token
+function findIdentifierToken(node: any): IToken | null {
+  return findTokenOfType(node, 'BacktickIdentifier') || findTokenOfType(node, 'Identifier')
+}
+
 function findTokensOfType(node: any, typeName: string): IToken[] {
   const tokens: IToken[] = []
   if (!node || !node.children) return tokens
@@ -688,7 +738,7 @@ function extractExpression(node: any): string {
       const isComma = token.tokenType.name === 'Comma'
       const prevIsLParen = prevToken.tokenType.name === 'LParen'
       const prevIsLBracket = prevToken.tokenType.name === 'LBracket'
-      const prevIsIdentifier = prevToken.tokenType.name === 'Identifier'
+      const prevIsIdentifier = prevToken.tokenType.name === 'Identifier' || prevToken.tokenType.name === 'BacktickIdentifier'
 
       // No space before/after parens when they're for function calls
       // No space after opening paren/bracket or before closing paren/bracket or comma
@@ -715,7 +765,11 @@ function extractExpression(node: any): string {
       }
     }
 
-    result += token.image
+    // Strip backticks from BacktickIdentifier tokens
+    const tokenValue = token.tokenType.name === 'BacktickIdentifier'
+      ? token.image.slice(1, -1)
+      : token.image
+    result += tokenValue
   }
 
   return result

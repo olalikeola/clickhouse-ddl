@@ -464,6 +464,87 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     })
   })
 
+  describe('Backtick Identifiers', () => {
+    it('parses backtick-quoted column names', () => {
+      const sql = `CREATE TABLE test (
+        \`org_id\` UInt64,
+        \`user-name\` String,
+        \`created_at\` DateTime
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns).toHaveLength(3)
+      expect(result.columns[0].name).toBe('org_id')
+      expect(result.columns[1].name).toBe('user-name')
+      expect(result.columns[2].name).toBe('created_at')
+    })
+
+    it('parses backtick-quoted table names', () => {
+      const sql = `CREATE TABLE \`my-table\` (
+        id UInt64
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.name).toBe('my-table')
+    })
+
+    it('parses schema-qualified names with backticks', () => {
+      const sql = `CREATE TABLE \`my-schema\`.\`my-table\` (
+        \`my-column\` UInt64
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.name).toBe('my-schema.my-table')
+      expect(result.columns[0].name).toBe('my-column')
+    })
+
+    it('handles mixed backtick and regular identifiers', () => {
+      const sql = `CREATE TABLE socket.\`my-table\` (
+        id UInt64,
+        \`user-id\` UInt64,
+        name String
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.name).toBe('socket.my-table')
+      expect(result.columns[0].name).toBe('id')
+      expect(result.columns[1].name).toBe('user-id')
+      expect(result.columns[2].name).toBe('name')
+    })
+
+    it('parses backtick identifiers with defaults and modifiers', () => {
+      const sql = `CREATE TABLE test (
+        \`org_id\` UInt64 DEFAULT toUInt64(organization_id),
+        \`plan_name\` Enum8('free' = 0, 'team' = 1) DEFAULT 'enterprise',
+        \`repo_labels\` Array(String) DEFAULT [],
+        \`alert_type\` LowCardinality(String),
+        \`computed_field\` UInt64 MATERIALIZED \`org_id\` * 100
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns).toHaveLength(5)
+      expect(result.columns[0].name).toBe('org_id')
+      expect(result.columns[0].default).toBe('toUInt64(organization_id)')
+      expect(result.columns[1].name).toBe('plan_name')
+      expect(result.columns[1].default).toBe("'enterprise'")
+      expect(result.columns[2].name).toBe('repo_labels')
+      expect(result.columns[2].default).toBe('[]')
+      expect(result.columns[3].name).toBe('alert_type')
+      expect(result.columns[4].name).toBe('computed_field')
+      expect(result.columns[4].materialized).toBe('org_id * 100')
+    })
+
+    it('handles backtick identifiers in expressions', () => {
+      const sql = `CREATE TABLE test (
+        \`col1\` UInt64,
+        \`col2\` UInt64 DEFAULT \`col1\` * 2
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[1].default).toBe('col1 * 2')
+    })
+  })
+
   describe('Error Handling', () => {
     it('throws error for invalid SQL', () => {
       const sql = `INVALID SQL STATEMENT`
