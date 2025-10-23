@@ -56,3 +56,5 @@ interface DDLColumn {
   alias?: string
 }
 ```
+
+ToDo: negative floating points
