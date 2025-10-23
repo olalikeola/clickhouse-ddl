@@ -910,8 +910,16 @@ function extractExpression(node: any): string {
       } else if ((isLParen || isLBracket) && prevIsIdentifier) {
         // No space between identifier and ( for function calls
       } else if (isOperator || prevIsOperator) {
-        // Space around operators
-        result += ' '
+        // Check if the PREVIOUS token was a unary operator (no space after it)
+        const prevWasUnaryOperator = prevIsOperator &&
+          (prevToken.tokenType.name === 'Minus' || prevToken.tokenType.name === 'Plus') &&
+          (i === 1 || // First operator in expression
+           (i >= 2 && ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual', 'LParen', 'Comma'].includes(filteredTokens[i - 2].tokenType.name)))
+
+        if (!prevWasUnaryOperator) {
+          // Space around binary operators only
+          result += ' '
+        }
       } else if (prevToken.tokenType.name === 'Comma') {
         // Space after comma
         result += ' '
