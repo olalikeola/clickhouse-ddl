@@ -207,6 +207,10 @@ class ClickHouseParser extends CstParser {
       this.CONSUME(LParen) // engine start paren
       this.OPTION2(() => {
         this.SUBRULE(this.simpleExpression)
+        this.MANY(() => {
+          this.CONSUME(Comma)
+          this.SUBRULE2(this.simpleExpression)
+        })
       })
       this.CONSUME(RParen) // engine end paren
     })

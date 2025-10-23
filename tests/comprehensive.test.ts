@@ -694,6 +694,28 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.columns[0].type).toBe('SimpleAggregateFunction(sum, UInt64)')
       expect(result.columns[1].type).toBe('SimpleAggregateFunction(max, Float32)')
     })
+
+    it('parses ENGINE with multiple arguments (ReplicatedMergeTree)', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64,
+        name String
+      ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`
+
+      const result = parse(sql)
+      expect(result.name).toBe('test')
+      expect(result.columns.length).toBe(2)
+      expect(result.engine).toBe('ReplicatedMergeTree')
+    })
+
+    it('parses ENGINE with single argument', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.name).toBe('test')
+      expect(result.engine).toBe('MergeTree')
+    })
   })
 
   describe('Error Handling', () => {
