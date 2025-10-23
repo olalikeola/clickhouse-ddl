@@ -24,7 +24,15 @@ export const LBracket = createToken({ name: 'LBracket', pattern: /\[/ })
 export const RBracket = createToken({ name: 'RBracket', pattern: /\]/ })
 export const Comma = createToken({ name: 'Comma', pattern: /,/ })
 export const Dot = createToken({ name: 'Dot', pattern: /\./ })
+
+// Comparison operators - ORDER MATTERS! More specific patterns first
+export const NotEquals = createToken({ name: 'NotEquals', pattern: /!=/ })
+export const GreaterThanOrEqual = createToken({ name: 'GreaterThanOrEqual', pattern: />=/ })
+export const LessThanOrEqual = createToken({ name: 'LessThanOrEqual', pattern: /<=/ })
+export const GreaterThan = createToken({ name: 'GreaterThan', pattern: />/ })
+export const LessThan = createToken({ name: 'LessThan', pattern: /</ })
 export const Equals = createToken({ name: 'Equals', pattern: /=/ })
+
 export const Semicolon = createToken({ name: 'Semicolon', pattern: /;/ })
 export const Plus = createToken({ name: 'Plus', pattern: /\+/ })
 export const Minus = createToken({ name: 'Minus', pattern: /-/ })
@@ -92,6 +100,12 @@ export const allTokens = [
   RBracket,
   Comma,
   Dot,
+  // Comparison operators - more specific first
+  NotEquals,
+  GreaterThanOrEqual,
+  LessThanOrEqual,
+  GreaterThan,
+  LessThan,
   Equals,
   Semicolon,
   Plus,

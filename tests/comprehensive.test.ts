@@ -545,6 +545,70 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     })
   })
 
+  describe('Complex Nested Expressions', () => {
+    it('parses if() conditional expressions', () => {
+      const sql = `CREATE TABLE test (
+        repo_full_name String DEFAULT if(repo_workspace = '', repo_slug, concat(repo_workspace, '/', repo_slug))
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].name).toBe('repo_full_name')
+      expect(result.columns[0].default).toBe("if(repo_workspace = '', repo_slug, concat(repo_workspace, '/', repo_slug))")
+    })
+
+    it('parses nested function calls', () => {
+      const sql = `CREATE TABLE test (
+        full_path String DEFAULT concat(workspace, '/', slug, '/', name)
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe("concat(workspace, '/', slug, '/', name)")
+    })
+
+    it('parses multi-line default expressions', () => {
+      const sql = `CREATE TABLE test (
+        org_snapshot_started_at_start_of_day DateTime DEFAULT toStartOfDay(
+          org_snapshot_started_at
+        )
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].name).toBe('org_snapshot_started_at_start_of_day')
+      expect(result.columns[0].default).toBe('toStartOfDay(org_snapshot_started_at)')
+    })
+
+    it('parses comparison operators in expressions', () => {
+      const sql = `CREATE TABLE test (
+        is_greater UInt8 DEFAULT if(value > 10, 1, 0),
+        is_equal UInt8 DEFAULT if(status = 'active', 1, 0),
+        is_not_equal UInt8 DEFAULT if(type != 'free', 1, 0)
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe('if(value > 10, 1, 0)')
+      expect(result.columns[1].default).toBe("if(status = 'active', 1, 0)")
+      expect(result.columns[2].default).toBe("if(type != 'free', 1, 0)")
+    })
+
+    it('parses deeply nested function calls', () => {
+      const sql = `CREATE TABLE test (
+        computed String DEFAULT if(a = '', b, concat(c, '/', if(d = '', e, f)))
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe("if(a = '', b, concat(c, '/', if(d = '', e, f)))")
+    })
+
+    it('handles empty string comparisons', () => {
+      const sql = `CREATE TABLE test (
+        result String DEFAULT if(workspace = '', '/', workspace)
+      ) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.columns[0].default).toBe("if(workspace = '', '/', workspace)")
+    })
+  })
+
   describe('Error Handling', () => {
     it('throws error for invalid SQL', () => {
       const sql = `INVALID SQL STATEMENT`

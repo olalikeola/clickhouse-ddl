@@ -26,6 +26,11 @@ import {
   OrderBy,
   PartitionBy,
   Settings,
+  NotEquals,
+  GreaterThanOrEqual,
+  LessThanOrEqual,
+  GreaterThan,
+  LessThan,
   Plus,
   Minus,
   Star,
@@ -89,6 +94,11 @@ class ClickHouseParser extends CstParser {
         OrderBy,
         PartitionBy,
         Settings,
+        NotEquals,
+        GreaterThanOrEqual,
+        LessThanOrEqual,
+        GreaterThan,
+        LessThan,
         Plus,
         Minus,
         Star,
@@ -216,6 +226,14 @@ class ClickHouseParser extends CstParser {
     this.SUBRULE(this.expressionTerm)
     this.MANY(() => {
       this.OR([
+        // Comparison operators
+        { ALT: () => this.CONSUME(NotEquals) },
+        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
+        { ALT: () => this.CONSUME(LessThanOrEqual) },
+        { ALT: () => this.CONSUME(GreaterThan) },
+        { ALT: () => this.CONSUME(LessThan) },
+        { ALT: () => this.CONSUME(Equals) },
+        // Arithmetic operators
         { ALT: () => this.CONSUME(Plus) },
         { ALT: () => this.CONSUME(Minus) },
         { ALT: () => this.CONSUME(Star) },
@@ -261,6 +279,21 @@ class ClickHouseParser extends CstParser {
             })
             this.CONSUME2(RParen)
           })
+        },
+      },
+      {
+        // IF keyword as function name (for if() function)
+        ALT: () => {
+          this.CONSUME(If)
+          this.CONSUME3(LParen)
+          this.OPTION5(() => {
+            this.SUBRULE5(this.simpleExpression)
+            this.MANY3(() => {
+              this.CONSUME3(Comma)
+              this.SUBRULE6(this.simpleExpression)
+            })
+          })
+          this.CONSUME3(RParen)
         },
       },
       { ALT: () => this.CONSUME(StringLiteral) },
@@ -729,8 +762,8 @@ function extractExpression(node: any): string {
 
     // Add space before token if needed
     if (i > 0 && prevToken) {
-      const isOperator = ['Plus', 'Minus', 'Star', 'Slash'].includes(token.tokenType.name)
-      const prevIsOperator = ['Plus', 'Minus', 'Star', 'Slash'].includes(prevToken.tokenType.name)
+      const isOperator = ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual'].includes(token.tokenType.name)
+      const prevIsOperator = ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual'].includes(prevToken.tokenType.name)
       const isLParen = token.tokenType.name === 'LParen'
       const isRParen = token.tokenType.name === 'RParen'
       const isLBracket = token.tokenType.name === 'LBracket'
