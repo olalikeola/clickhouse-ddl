@@ -1,0 +1,47 @@
+{
+    "name": "clickhouse-ddl-parser",
+    "version": "0.0.1",
+    "description": "A robust parser for ClickHouse DDL statements",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": ["dist"],
+    "keywords": ["clickhouse", "ddl", "parser", "sql", "chevrotain"],
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/olalikeola/clickhouse-ddl-parser.git"
+    },
+    "license": "MIT",
+    "author": "Olayinka Adekola <okakniyalo@gmail.com>",
+    "scripts": {
+      "build": "tsc",
+      "test": "vitest",
+      "test:coverage": "vitest --coverage",
+      "test:watch": "vitest --watch",
+      "lint": "eslint . --ext .ts",
+      "lint:fix": "eslint . --ext .ts --fix",
+      "format": "prettier --write .",
+      "format:check": "prettier --check .",
+      "start": "node dist/index.js",
+      "prepare": "npm run build",
+      "prepublishOnly": "npm run build && npm test"
+    },
+    "devDependencies": {
+      "@types/node": "^20.0.0",
+      "@typescript-eslint/eslint-plugin": "^6.0.0",
+      "@typescript-eslint/parser": "^6.0.0",
+      "chevrotain": "^11.0.0",
+      "eslint": "^8.0.0",
+      "eslint-config-prettier": "^8.0.0",
+      "prettier": "^3.0.0",
+      "ts-node": "^10.9.1",
+      "typescript": "^5.0.0",
+      "vitest": "^0.34.0",
+      "@vitest/coverage-v8": "^0.34.0"
+    },
+    "dependencies": {
+      "chevrotain": "^11.0.0"
+    },
+    "engines": {
+      "node": ">=16.0.0"
+    }
+  }
