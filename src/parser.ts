@@ -54,8 +54,8 @@ import {
   Enum16,
   FixedString,
   ClickHouseLexer,
-} from './tokens'
-import { DDLTable, DDLColumn } from './ast'
+} from './tokens.js'
+import { DDLTable, DDLColumn } from './ast.js'
 
 class ClickHouseParser extends CstParser {
   constructor() {

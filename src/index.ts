@@ -1,2 +1,2 @@
-export { parse } from './parser'
-export type { DDLTable, DDLColumn } from './ast'
+export { parse } from './parser.js'
+export type { DDLTable, DDLColumn } from './ast.js'
