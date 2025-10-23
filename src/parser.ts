@@ -230,9 +230,22 @@ class ClickHouseParser extends CstParser {
 
   private orderByClause = this.RULE('orderByClause', () => {
     this.CONSUME(OrderBy)
-    this.CONSUME2(LParen)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME2(Identifier) })
-    this.CONSUME2(RParen)
+    this.OR([
+      // With parentheses: ORDER BY (id, name)
+      {
+        ALT: () => {
+          this.CONSUME2(LParen)
+          this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME2(Identifier) })
+          this.CONSUME2(RParen)
+        }
+      },
+      // Without parentheses: ORDER BY id, name
+      {
+        ALT: () => {
+          this.AT_LEAST_ONE_SEP2({ SEP: Comma, DEF: () => this.CONSUME3(Identifier) })
+        }
+      }
+    ])
   })
 
   private partitionByClause = this.RULE('partitionByClause', () => {

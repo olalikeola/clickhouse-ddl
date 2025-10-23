@@ -156,15 +156,36 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
   })
 
   describe('Table Options', () => {
-    it('parses ORDER BY clause', () => {
+    it('parses ORDER BY clause with parentheses', () => {
       const sql = `CREATE TABLE test (
         id UInt64,
         timestamp DateTime
       ) ENGINE = MergeTree()
       ORDER BY (id, timestamp)`
-      
+
       const result = parse(sql)
       expect(result.orderBy).toEqual(['id', 'timestamp'])
+    })
+
+    it('parses ORDER BY clause without parentheses', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64,
+        name String
+      ) ENGINE = MergeTree()
+      ORDER BY id, name`
+
+      const result = parse(sql)
+      expect(result.orderBy).toEqual(['id', 'name'])
+    })
+
+    it('parses ORDER BY clause with single column (no parentheses)', () => {
+      const sql = `CREATE TABLE test (
+        id UInt64
+      ) ENGINE = MergeTree()
+      ORDER BY id`
+
+      const result = parse(sql)
+      expect(result.orderBy).toEqual(['id'])
     })
 
     it('parses PARTITION BY clause', () => {
@@ -730,7 +751,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.engine).toBe('MergeTree')
     })
 
-    it('parses production-style table with PRIMARY KEY and ORDER BY', () => {
+    it('parses production-style table with PRIMARY KEY and ORDER BY (with parens)', () => {
       const sql = `CREATE TABLE socket.webhook_events (
         id UUID,
         event_type String,
@@ -744,6 +765,22 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.name).toBe('socket.webhook_events')
       expect(result.engine).toBe('ReplicatedMergeTree')
       expect(result.columns.length).toBe(4)
+    })
+
+    it('parses production-style table with ORDER BY (no parens)', () => {
+      const sql = `CREATE TABLE socket.webhook_events (
+        id UUID,
+        event_type String,
+        payload String,
+        created_at DateTime64(3)
+      ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+      ORDER BY created_at, id`
+
+      const result = parse(sql)
+      expect(result.name).toBe('socket.webhook_events')
+      expect(result.engine).toBe('ReplicatedMergeTree')
+      expect(result.columns.length).toBe(4)
+      expect(result.orderBy).toEqual(['created_at', 'id'])
     })
   })
 
