@@ -3,12 +3,19 @@
     "version": "0.0.16",
     "type": "module",
     "description": "A robust parser for ClickHouse DDL statements",
-    "main": "dist/src/index.js",
-    "types": "dist/src/index.d.ts",
+    "main": "dist/cjs/src/index.js",
+    "module": "dist/esm/src/index.js",
+    "types": "dist/esm/src/index.d.ts",
     "exports": {
         ".": {
-            "import": "./dist/src/index.js",
-            "types": "./dist/src/index.d.ts"
+            "import": {
+                "types": "./dist/esm/src/index.d.ts",
+                "default": "./dist/esm/src/index.js"
+            },
+            "require": {
+                "types": "./dist/cjs/src/index.d.ts",
+                "default": "./dist/cjs/src/index.js"
+            }
         }
     },
     "files": [
@@ -28,7 +35,7 @@
     "license": "MIT",
     "author": "Olayinka Adekola <okakniyalo@gmail.com>",
     "scripts": {
-        "build": "tsc",
+        "build": "node build.js",
         "test": "vitest",
         "test:coverage": "vitest --coverage",
         "test:watch": "vitest --watch",
@@ -36,7 +43,7 @@
         "lint:fix": "eslint . --ext .ts --fix",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "start": "node dist/src/index.js",
+        "start": "node dist/esm/src/index.js",
         "prepare": "npm run build",
         "prepublishOnly": "npm run build && npx vitest --run"
     },
@@ -44,13 +51,14 @@
         "@types/node": "^20.0.0",
         "@typescript-eslint/eslint-plugin": "^6.0.0",
         "@typescript-eslint/parser": "^6.0.0",
+        "@vitest/coverage-v8": "^0.34.0",
+        "esbuild": "^0.25.11",
         "eslint": "^8.0.0",
         "eslint-config-prettier": "^8.0.0",
         "prettier": "^3.0.0",
         "ts-node": "^10.9.1",
         "typescript": "^5.0.0",
-        "vitest": "^0.34.0",
-        "@vitest/coverage-v8": "^0.34.0"
+        "vitest": "^0.34.0"
     },
     "dependencies": {
         "chevrotain": "^11.0.0"
