@@ -966,6 +966,50 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('start_date')
     })
 
+    it('parses CREATE VIEW with LowCardinality in parameterized queries', () => {
+      const sql = `CREATE VIEW filtered_reports AS
+        SELECT id, name, tier
+        FROM users
+        WHERE tier = {tier_name:LowCardinality(String)}
+          AND if({plan:LowCardinality(String)} = 'basic', tier = 'basic', tier != 'basic')`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('tier_name')
+      expect(result.view?.selectQuery).toContain('LowCardinality')
+      expect(result.view?.selectQuery).toContain('plan')
+    })
+
+    it('parses CREATE VIEW with Nullable in parameterized queries', () => {
+      const sql = `CREATE VIEW nullable_reports AS
+        SELECT id, name
+        FROM users
+        WHERE email = {email:Nullable(String)}
+          AND age > {min_age:Nullable(UInt8)}`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('email')
+      expect(result.view?.selectQuery).toContain('Nullable')
+      expect(result.view?.selectQuery).toContain('min_age')
+    })
+
+    it('parses CREATE VIEW with complex nested types in parameterized queries', () => {
+      const sql = `CREATE VIEW complex_reports AS
+        SELECT id, name
+        FROM users
+        WHERE ids IN ({ids:Array(Nullable(UInt64))})
+          AND metadata = {meta:Map(String, Nullable(String))}
+          AND tags = {tags:Array(LowCardinality(String))}`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('Array')
+      expect(result.view?.selectQuery).toContain('Nullable')
+      expect(result.view?.selectQuery).toContain('Map')
+      expect(result.view?.selectQuery).toContain('LowCardinality')
+    })
+
     it('parses CREATE VIEW with complex if() and window functions', () => {
       const sql = `CREATE VIEW analytics.latest_records_view AS
         WITH ranked_records AS (

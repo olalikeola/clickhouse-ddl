@@ -277,7 +277,7 @@ class ClickHouseParser extends CstParser {
         // SQL keywords that can appear in SELECT queries (window functions, CTEs, etc.)
         { ALT: () => this.CONSUME(PartitionBy) },
         { ALT: () => this.CONSUME(OrderBy) },
-        // Add data type tokens that might appear in SELECT queries (CAST, etc.)
+        // Add data type tokens that might appear in SELECT queries (CAST, parameterized queries, etc.)
         { ALT: () => this.CONSUME(String) },
         { ALT: () => this.CONSUME(UInt8) },
         { ALT: () => this.CONSUME(UInt16) },
@@ -289,11 +289,27 @@ class ClickHouseParser extends CstParser {
         { ALT: () => this.CONSUME(Int64) },
         { ALT: () => this.CONSUME(Float32) },
         { ALT: () => this.CONSUME(Float64) },
+        { ALT: () => this.CONSUME(Decimal) },
         { ALT: () => this.CONSUME(Date) },
+        { ALT: () => this.CONSUME(Date32) },
         { ALT: () => this.CONSUME(DateTime) },
+        { ALT: () => this.CONSUME(DateTime64) },
+        { ALT: () => this.CONSUME(UUID) },
+        { ALT: () => this.CONSUME(Bool) },
+        { ALT: () => this.CONSUME(IPv4) },
+        { ALT: () => this.CONSUME(IPv6) },
+        { ALT: () => this.CONSUME(JSONType) },
         { ALT: () => this.CONSUME(Array) },
         { ALT: () => this.CONSUME(Tuple) },
         { ALT: () => this.CONSUME(Map) },
+        { ALT: () => this.CONSUME(Nested) },
+        { ALT: () => this.CONSUME(LowCardinality) },
+        { ALT: () => this.CONSUME(Nullable) },
+        { ALT: () => this.CONSUME(Enum8) },
+        { ALT: () => this.CONSUME(Enum16) },
+        { ALT: () => this.CONSUME(FixedString) },
+        { ALT: () => this.CONSUME(AggregateFunction) },
+        { ALT: () => this.CONSUME(SimpleAggregateFunction) },
       ])
     })
   })
