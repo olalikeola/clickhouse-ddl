@@ -3,6 +3,9 @@ import { createToken, Lexer } from 'chevrotain'
 // Keywords - using negative lookahead to ensure they're not part of identifiers
 export const Create = createToken({ name: 'Create', pattern: /CREATE(?![a-zA-Z0-9_])/i })
 export const Table = createToken({ name: 'Table', pattern: /TABLE(?![a-zA-Z0-9_.])(?=\s)/i })
+export const View = createToken({ name: 'View', pattern: /VIEW(?![a-zA-Z0-9_])/i })
+export const To = createToken({ name: 'To', pattern: /TO(?![a-zA-Z0-9_])/i })
+export const As = createToken({ name: 'As', pattern: /AS(?![a-zA-Z0-9_])/i })
 export const If = createToken({ name: 'If', pattern: /IF(?![a-zA-Z0-9_])/i })
 export const Not = createToken({ name: 'Not', pattern: /NOT(?![a-zA-Z0-9_])/i })
 export const Exists = createToken({ name: 'Exists', pattern: /EXISTS(?![a-zA-Z0-9_])/i })
@@ -89,6 +92,9 @@ export const allTokens = [
   LineComment,
   Create,
   Table,
+  View,
+  To,
+  As,
   If,
   Not,
   Exists,

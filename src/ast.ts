@@ -13,14 +13,27 @@ export interface DDLColumn {
     engine?: string
     engineArgs?: string
     columns: DDLColumn[]
-    orderBy?: string[]    
-    partitionBy?: string  
+    orderBy?: string[]
+    partitionBy?: string
     settings?: Record<string, string>  // Engine settings
   }
-  
+
+  export interface DDLView {
+    name: string
+    selectQuery: string
+  }
+
+  export interface DDLMaterializedView {
+    name: string
+    toTable: string
+    selectQuery: string
+  }
+
   export interface DDLStatement {
-    type: 'CREATE_TABLE'
-    table: DDLTable
+    type: 'CREATE_TABLE' | 'CREATE_VIEW' | 'CREATE_MATERIALIZED_VIEW'
+    table?: DDLTable
+    view?: DDLView
+    materializedView?: DDLMaterializedView
   }
   
   export interface SchemaDiff {

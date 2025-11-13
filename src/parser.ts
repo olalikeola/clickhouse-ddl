@@ -2,6 +2,9 @@ import { CstParser, IToken } from 'chevrotain'
 import {
   Create,
   Table,
+  View,
+  To,
+  As,
   If,
   Not,
   Exists,
@@ -70,7 +73,7 @@ import {
   SimpleAggregateFunction,
   ClickHouseLexer,
 } from './tokens.js'
-import { DDLTable, DDLColumn } from './ast.js'
+import { DDLTable, DDLColumn, DDLStatement, DDLView, DDLMaterializedView } from './ast.js'
 
 class ClickHouseParser extends CstParser {
   constructor() {
@@ -78,6 +81,9 @@ class ClickHouseParser extends CstParser {
       [
         Create,
         Table,
+        View,
+        To,
+        As,
         If,
         Not,
         Exists,
@@ -150,7 +156,11 @@ class ClickHouseParser extends CstParser {
   }
 
   public root = this.RULE('root', () => {
-    this.SUBRULE(this.createTable)
+    this.OR([
+      { ALT: () => this.SUBRULE(this.createTable) },
+      { ALT: () => this.SUBRULE(this.createMaterializedView) },
+      { ALT: () => this.SUBRULE(this.createView) }
+    ])
   })
 
   private createTable = this.RULE('createTable', () => {
@@ -185,6 +195,84 @@ class ClickHouseParser extends CstParser {
 
     this.OPTION6(() => {
       this.SUBRULE(this.settingsClause)
+    })
+  })
+
+  private createView = this.RULE('createView', () => {
+    this.CONSUME(Create)
+    this.CONSUME(View)
+    this.OPTION(() => {
+      this.CONSUME(If)
+      this.CONSUME(Not)
+      this.CONSUME(Exists)
+    })
+    this.SUBRULE(this.qualifiedTableName) // view name (qualified or unqualified)
+    this.CONSUME(As)
+    // Capture the SELECT query - consume everything after AS
+    this.SUBRULE(this.selectQuery)
+  })
+
+  private createMaterializedView = this.RULE('createMaterializedView', () => {
+    this.CONSUME(Create)
+    this.CONSUME(Materialized)
+    this.CONSUME(View)
+    this.OPTION(() => {
+      this.CONSUME(If)
+      this.CONSUME(Not)
+      this.CONSUME(Exists)
+    })
+    this.SUBRULE(this.qualifiedTableName) // view name (qualified or unqualified)
+    this.CONSUME(To)
+    this.SUBRULE2(this.qualifiedTableName) // target table name (qualified or unqualified)
+    this.CONSUME(As)
+    // Capture the SELECT query - consume everything after AS
+    this.SUBRULE(this.selectQuery)
+  })
+
+  private selectQuery = this.RULE('selectQuery', () => {
+    // For now, consume all remaining tokens as the SELECT query
+    // We'll parse this properly in a future iteration
+    this.MANY(() => {
+      this.OR([
+        { ALT: () => this.CONSUME(Identifier) },
+        { ALT: () => this.CONSUME(BacktickIdentifier) },
+        { ALT: () => this.CONSUME(StringLiteral) },
+        { ALT: () => this.CONSUME(NumberLiteral) },
+        { ALT: () => this.CONSUME(LParen) },
+        { ALT: () => this.CONSUME(RParen) },
+        { ALT: () => this.CONSUME(LBracket) },
+        { ALT: () => this.CONSUME(RBracket) },
+        { ALT: () => this.CONSUME(Comma) },
+        { ALT: () => this.CONSUME(Dot) },
+        { ALT: () => this.CONSUME(As) },
+        { ALT: () => this.CONSUME(Equals) },
+        { ALT: () => this.CONSUME(NotEquals) },
+        { ALT: () => this.CONSUME(GreaterThan) },
+        { ALT: () => this.CONSUME(LessThan) },
+        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
+        { ALT: () => this.CONSUME(LessThanOrEqual) },
+        { ALT: () => this.CONSUME(Plus) },
+        { ALT: () => this.CONSUME(Minus) },
+        { ALT: () => this.CONSUME(Star) },
+        { ALT: () => this.CONSUME(Slash) },
+        // Add data type tokens that might appear in SELECT queries (CAST, etc.)
+        { ALT: () => this.CONSUME(String) },
+        { ALT: () => this.CONSUME(UInt8) },
+        { ALT: () => this.CONSUME(UInt16) },
+        { ALT: () => this.CONSUME(UInt32) },
+        { ALT: () => this.CONSUME(UInt64) },
+        { ALT: () => this.CONSUME(Int8) },
+        { ALT: () => this.CONSUME(Int16) },
+        { ALT: () => this.CONSUME(Int32) },
+        { ALT: () => this.CONSUME(Int64) },
+        { ALT: () => this.CONSUME(Float32) },
+        { ALT: () => this.CONSUME(Float64) },
+        { ALT: () => this.CONSUME(Date) },
+        { ALT: () => this.CONSUME(DateTime) },
+        { ALT: () => this.CONSUME(Array) },
+        { ALT: () => this.CONSUME(Tuple) },
+        { ALT: () => this.CONSUME(Map) },
+      ])
     })
   })
 
@@ -564,7 +652,7 @@ class ClickHouseParser extends CstParser {
 
 const parser = new ClickHouseParser()
 
-export function parse(sql: string): DDLTable {
+export function parseStatement(sql: string): DDLStatement {
   const lexResult = ClickHouseLexer.tokenize(sql)
   parser.input = lexResult.tokens
   const cst = parser.root()
@@ -572,8 +660,34 @@ export function parse(sql: string): DDLTable {
     throw new Error('Parse errors: ' + JSON.stringify(parser.errors, null, 2))
   }
 
-  // Enhanced CST -> AST transformer
-  const create = (cst.children as any).createTable[0]
+  // Check if it's a CREATE TABLE, CREATE VIEW, or CREATE MATERIALIZED VIEW statement
+  if ((cst.children as any).createTable) {
+    const create = (cst.children as any).createTable[0]
+    const table = parseCreateTable(create)
+    return { type: 'CREATE_TABLE', table }
+  } else if ((cst.children as any).createMaterializedView) {
+    const create = (cst.children as any).createMaterializedView[0]
+    const materializedView = parseCreateMaterializedView(create)
+    return { type: 'CREATE_MATERIALIZED_VIEW', materializedView }
+  } else if ((cst.children as any).createView) {
+    const create = (cst.children as any).createView[0]
+    const view = parseCreateView(create)
+    return { type: 'CREATE_VIEW', view }
+  } else {
+    throw new Error('Unknown statement type')
+  }
+}
+
+// Backwards compatible function - returns just the table
+export function parse(sql: string): DDLTable {
+  const result = parseStatement(sql)
+  if (result.type === 'CREATE_TABLE' && result.table) {
+    return result.table
+  }
+  throw new Error('Expected CREATE TABLE statement')
+}
+
+function parseCreateTable(create: any): DDLTable {
   
   // Handle qualified table names (schema.table or just table)
   const qualifiedTableName = create.children.qualifiedTableName[0]
@@ -711,6 +825,102 @@ export function parse(sql: string): DDLTable {
   }
 
   return { name: tableName, columns, engine, orderBy, partitionBy, settings }
+}
+
+function parseCreateView(create: any): DDLView {
+  // Handle qualified view names (schema.view or just view)
+  const qualifiedTableName = create.children.qualifiedTableName[0]
+  const identifierTokens = findTokensOfType(qualifiedTableName, 'Identifier')
+  const backtickTokens = findTokensOfType(qualifiedTableName, 'BacktickIdentifier')
+  const tableTokens = findTokensOfType(qualifiedTableName, 'Table')
+
+  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
+  const allIdentifiers = [...identifierTokens, ...backtickTokens].sort((a, b) => a.startOffset - b.startOffset)
+
+  let viewName: string
+  if (allIdentifiers.length === 2) {
+    // schema.view format with two identifiers
+    viewName = `${extractIdentifierValue(allIdentifiers[0])}.${extractIdentifierValue(allIdentifiers[1])}`
+  } else if (allIdentifiers.length === 1 && tableTokens.length === 1) {
+    // schema.view format with identifier and table keyword
+    viewName = `${extractIdentifierValue(allIdentifiers[0])}.${tableTokens[0].image}`
+  } else if (tableTokens.length === 2) {
+    // schema.view format with both table keywords
+    viewName = `${tableTokens[0].image}.${tableTokens[1].image}`
+  } else if (allIdentifiers.length === 1 && tableTokens.length === 0) {
+    // just view name as identifier
+    viewName = extractIdentifierValue(allIdentifiers[0])
+  } else if (tableTokens.length === 1 && allIdentifiers.length === 0) {
+    // just view name as table keyword
+    viewName = tableTokens[0].image
+  } else {
+    // fallback
+    viewName = allIdentifiers[0] ? extractIdentifierValue(allIdentifiers[0]) : (tableTokens[0]?.image || 'unknown')
+  }
+
+  // Extract the SELECT query from the selectQuery node
+  const selectQueryNode = create.children.selectQuery[0]
+  const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
+
+  return { name: viewName, selectQuery }
+}
+
+function parseCreateMaterializedView(create: any): DDLMaterializedView {
+  // Handle qualified view names (schema.view or just view)
+  const qualifiedTableNames = create.children.qualifiedTableName
+
+  // First qualifiedTableName is the view name
+  const viewNameNode = qualifiedTableNames[0]
+  const viewIdentifierTokens = findTokensOfType(viewNameNode, 'Identifier')
+  const viewBacktickTokens = findTokensOfType(viewNameNode, 'BacktickIdentifier')
+  const viewTableTokens = findTokensOfType(viewNameNode, 'Table')
+
+  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
+  const viewAllIdentifiers = [...viewIdentifierTokens, ...viewBacktickTokens].sort((a, b) => a.startOffset - b.startOffset)
+
+  let viewName: string
+  if (viewAllIdentifiers.length === 2) {
+    viewName = `${extractIdentifierValue(viewAllIdentifiers[0])}.${extractIdentifierValue(viewAllIdentifiers[1])}`
+  } else if (viewAllIdentifiers.length === 1 && viewTableTokens.length === 1) {
+    viewName = `${extractIdentifierValue(viewAllIdentifiers[0])}.${viewTableTokens[0].image}`
+  } else if (viewTableTokens.length === 2) {
+    viewName = `${viewTableTokens[0].image}.${viewTableTokens[1].image}`
+  } else if (viewAllIdentifiers.length === 1 && viewTableTokens.length === 0) {
+    viewName = extractIdentifierValue(viewAllIdentifiers[0])
+  } else if (viewTableTokens.length === 1 && viewAllIdentifiers.length === 0) {
+    viewName = viewTableTokens[0].image
+  } else {
+    viewName = viewAllIdentifiers[0] ? extractIdentifierValue(viewAllIdentifiers[0]) : (viewTableTokens[0]?.image || 'unknown')
+  }
+
+  // Second qualifiedTableName is the target table name
+  const toTableNode = qualifiedTableNames[1]
+  const toIdentifierTokens = findTokensOfType(toTableNode, 'Identifier')
+  const toBacktickTokens = findTokensOfType(toTableNode, 'BacktickIdentifier')
+  const toTableTokens = findTokensOfType(toTableNode, 'Table')
+
+  const toAllIdentifiers = [...toIdentifierTokens, ...toBacktickTokens].sort((a, b) => a.startOffset - b.startOffset)
+
+  let toTable: string
+  if (toAllIdentifiers.length === 2) {
+    toTable = `${extractIdentifierValue(toAllIdentifiers[0])}.${extractIdentifierValue(toAllIdentifiers[1])}`
+  } else if (toAllIdentifiers.length === 1 && toTableTokens.length === 1) {
+    toTable = `${extractIdentifierValue(toAllIdentifiers[0])}.${toTableTokens[0].image}`
+  } else if (toTableTokens.length === 2) {
+    toTable = `${toTableTokens[0].image}.${toTableTokens[1].image}`
+  } else if (toAllIdentifiers.length === 1 && toTableTokens.length === 0) {
+    toTable = extractIdentifierValue(toAllIdentifiers[0])
+  } else if (toTableTokens.length === 1 && toAllIdentifiers.length === 0) {
+    toTable = toTableTokens[0].image
+  } else {
+    toTable = toAllIdentifiers[0] ? extractIdentifierValue(toAllIdentifiers[0]) : (toTableTokens[0]?.image || 'unknown')
+  }
+
+  // Extract the SELECT query from the selectQuery node
+  const selectQueryNode = create.children.selectQuery[0]
+  const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
+
+  return { name: viewName, toTable, selectQuery }
 }
 
 function extractType(typeNode: any): { type: string; nullable: boolean } {

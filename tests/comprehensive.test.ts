@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parse } from '../src/parser'
+import { parse, parseStatement } from '../src/parser'
 
 describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
   describe('Basic CREATE TABLE', () => {
@@ -845,6 +845,135 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const sql = `CREATE TABLE () ENGINE = MergeTree()`
 
       expect(() => parse(sql)).toThrow()
+    })
+  })
+
+  describe('CREATE VIEW - Phase 1', () => {
+    it('parses simple CREATE VIEW', () => {
+      const sql = `CREATE VIEW test_view AS SELECT id, name FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view).toBeDefined()
+      expect(result.view?.name).toBe('test_view')
+      expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('id')
+      expect(result.view?.selectQuery).toContain('name')
+      expect(result.view?.selectQuery).toContain('FROM')
+      expect(result.view?.selectQuery).toContain('users')
+    })
+
+    it('parses CREATE VIEW with IF NOT EXISTS', () => {
+      const sql = `CREATE VIEW IF NOT EXISTS test_view AS SELECT * FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('test_view')
+      expect(result.view?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE VIEW with schema-qualified name', () => {
+      const sql = `CREATE VIEW analytics.user_summary AS SELECT id, name FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.user_summary')
+      expect(result.view?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE VIEW with complex SELECT query', () => {
+      const sql = `CREATE VIEW user_stats AS SELECT id, COUNT(*) as count FROM events WHERE timestamp > '2024-01-01' GROUP BY id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('user_stats')
+      expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('COUNT')
+      expect(result.view?.selectQuery).toContain('WHERE')
+      expect(result.view?.selectQuery).toContain('GROUP')
+    })
+
+    it('backwards compatibility: parse() still works for CREATE TABLE', () => {
+      const sql = `CREATE TABLE users (id UInt64, name String) ENGINE = MergeTree()`
+
+      const result = parse(sql)
+      expect(result.name).toBe('users')
+      expect(result.columns).toHaveLength(2)
+    })
+  })
+
+  describe('CREATE MATERIALIZED VIEW - Phase 2 (Bug Fix)', () => {
+    it('parses materialized view with schema-qualified names and multi-line SELECT', () => {
+      const sql = `CREATE MATERIALIZED VIEW IF NOT EXISTS
+        analytics.daily_summary_mv
+        TO analytics.daily_summary
+      AS
+      SELECT
+        snapshot_id AS last_snapshot_id,
+        user_id AS last_user_id,
+        org_id AS last_org_id
+      FROM analytics.raw_events`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView).toBeDefined()
+      expect(result.materializedView?.name).toBe('analytics.daily_summary_mv')
+      expect(result.materializedView?.toTable).toBe('analytics.daily_summary')
+      expect(result.materializedView?.selectQuery).toContain('SELECT')
+      expect(result.materializedView?.selectQuery).toContain('snapshot_id')
+      expect(result.materializedView?.selectQuery).toContain('FROM')
+      expect(result.materializedView?.selectQuery).toContain('raw_events')
+    })
+
+    it('parses minimal CREATE MATERIALIZED VIEW', () => {
+      const sql = `CREATE MATERIALIZED VIEW test_mv TO test_table AS SELECT 1`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('test_mv')
+      expect(result.materializedView?.toTable).toBe('test_table')
+      expect(result.materializedView?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE MATERIALIZED VIEW with IF NOT EXISTS', () => {
+      const sql = `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.stats_mv TO analytics.stats AS SELECT id, COUNT(*) FROM events GROUP BY id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('analytics.stats_mv')
+      expect(result.materializedView?.toTable).toBe('analytics.stats')
+      expect(result.materializedView?.selectQuery).toContain('SELECT')
+      expect(result.materializedView?.selectQuery).toContain('COUNT')
+    })
+
+    it('parses CREATE MATERIALIZED VIEW with complex SELECT', () => {
+      const sql = `CREATE MATERIALIZED VIEW user_summary_mv TO user_summary AS
+        SELECT
+          user_id,
+          COUNT(*) as event_count,
+          MAX(timestamp) as last_event
+        FROM events
+        WHERE timestamp > '2024-01-01'
+        GROUP BY user_id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('user_summary_mv')
+      expect(result.materializedView?.toTable).toBe('user_summary')
+      expect(result.materializedView?.selectQuery).toContain('SELECT')
+      expect(result.materializedView?.selectQuery).toContain('COUNT')
+      expect(result.materializedView?.selectQuery).toContain('MAX')
+      expect(result.materializedView?.selectQuery).toContain('WHERE')
+      expect(result.materializedView?.selectQuery).toContain('GROUP')
+    })
+
+    it('parses CREATE MATERIALIZED VIEW with backtick identifiers', () => {
+      const sql = `CREATE MATERIALIZED VIEW \`my-mv\` TO \`my-table\` AS SELECT id FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('my-mv')
+      expect(result.materializedView?.toTable).toBe('my-table')
     })
   })
 })
