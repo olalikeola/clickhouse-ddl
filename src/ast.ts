@@ -26,7 +26,8 @@ export interface DDLColumn {
   export interface DDLMaterializedView {
     name: string
     toTable: string
-    selectQuery: string
+    columns?: DDLColumn[]  // Optional: present in system.tables format
+    selectQuery?: string   // Optional: may not be present in system.tables format
   }
 
   export interface DDLStatement {

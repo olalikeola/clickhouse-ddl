@@ -224,9 +224,19 @@ class ClickHouseParser extends CstParser {
     this.SUBRULE(this.qualifiedTableName) // view name (qualified or unqualified)
     this.CONSUME(To)
     this.SUBRULE2(this.qualifiedTableName) // target table name (qualified or unqualified)
-    this.CONSUME(As)
-    // Capture the SELECT query - consume everything after AS
-    this.SUBRULE(this.selectQuery)
+
+    // Optional: column definitions (system.tables format)
+    this.OPTION2(() => {
+      this.CONSUME(LParen) // column definitions start
+      this.SUBRULE(this.columns)
+      this.CONSUME(RParen) // column definitions end
+    })
+
+    // Optional: AS SELECT query (source code format)
+    this.OPTION3(() => {
+      this.CONSUME(As)
+      this.SUBRULE(this.selectQuery)
+    })
   })
 
   private selectQuery = this.RULE('selectQuery', () => {
@@ -916,11 +926,79 @@ function parseCreateMaterializedView(create: any): DDLMaterializedView {
     toTable = toAllIdentifiers[0] ? extractIdentifierValue(toAllIdentifiers[0]) : (toTableTokens[0]?.image || 'unknown')
   }
 
-  // Extract the SELECT query from the selectQuery node
-  const selectQueryNode = create.children.selectQuery[0]
-  const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
+  // Optional: Parse column definitions (system.tables format)
+  let columns: DDLColumn[] | undefined
+  if (create.children.columns) {
+    const columnNodes = (create.children.columns[0].children as any).column
+    columns = columnNodes.map((colNode: any) => {
+      const nameTok = findIdentifierToken(colNode) as IToken
+      const name = extractIdentifierValue(nameTok)
+      let type = 'unknown'
+      let nullable = false
+      let def: string | undefined
+      let materialized: string | undefined
+      let alias: string | undefined
+      let comment: string | undefined
 
-  return { name: viewName, toTable, selectQuery }
+      // Parse type - extract from type node
+      if (colNode.children.type) {
+        const typeNode = colNode.children.type[0]
+        const typeResult = extractType(typeNode)
+        type = typeResult.type
+        nullable = typeResult.nullable
+      }
+
+      // Check for NULL keyword (alternative to Nullable)
+      if (colNode.children.Null) {
+        nullable = true
+      }
+
+      // Parse default value
+      if (colNode.children.Default) {
+        def = extractExpression(colNode.children.simpleExpression[0])
+      }
+
+      // Parse materialized
+      if (colNode.children.Materialized) {
+        const simpleExpNodes = colNode.children.simpleExpression || []
+        for (let i = 0; i < simpleExpNodes.length; i++) {
+          const expr = extractExpression(simpleExpNodes[i])
+          if (!def || i > 0) {
+            materialized = expr
+            break
+          }
+        }
+      }
+
+      // Parse alias
+      if (colNode.children.Alias) {
+        const simpleExpNodes = colNode.children.simpleExpression || []
+        if (simpleExpNodes.length > 0) {
+          alias = extractExpression(simpleExpNodes[simpleExpNodes.length - 1])
+        }
+      }
+
+      // Parse comment
+      if (colNode.children.Comment) {
+        const stringLiterals = findTokensOfType(colNode, 'StringLiteral')
+        if (stringLiterals.length > 0) {
+          const commentLiteral = stringLiterals[stringLiterals.length - 1].image
+          comment = commentLiteral.slice(1, -1)
+        }
+      }
+
+      return { name, type, nullable, default: def, materialized, alias, comment }
+    })
+  }
+
+  // Optional: Extract the SELECT query from the selectQuery node
+  let selectQuery: string | undefined
+  if (create.children.selectQuery && create.children.selectQuery[0]) {
+    const selectQueryNode = create.children.selectQuery[0]
+    selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
+  }
+
+  return { name: viewName, toTable, columns, selectQuery }
 }
 
 function extractType(typeNode: any): { type: string; nullable: boolean } {

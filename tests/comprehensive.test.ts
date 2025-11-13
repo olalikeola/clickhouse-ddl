@@ -976,4 +976,65 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.materializedView?.toTable).toBe('my-table')
     })
   })
+
+  describe('CREATE MATERIALIZED VIEW - system.tables format', () => {
+    it('parses system.tables format with column definitions', () => {
+      const sql = `CREATE MATERIALIZED VIEW analytics.daily_summary_mv
+        TO analytics.daily_summary
+        (\`snapshot_id\` UUID, \`user_id\` UInt64, \`org_id\` String)`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('analytics.daily_summary_mv')
+      expect(result.materializedView?.toTable).toBe('analytics.daily_summary')
+      expect(result.materializedView?.columns).toBeDefined()
+      expect(result.materializedView?.columns).toHaveLength(3)
+      expect(result.materializedView?.columns?.[0].name).toBe('snapshot_id')
+      expect(result.materializedView?.columns?.[0].type).toBe('UUID')
+      expect(result.materializedView?.columns?.[1].name).toBe('user_id')
+      expect(result.materializedView?.columns?.[1].type).toBe('UInt64')
+      expect(result.materializedView?.columns?.[2].name).toBe('org_id')
+      expect(result.materializedView?.columns?.[2].type).toBe('String')
+    })
+
+    it('parses system.tables format with many columns', () => {
+      const sql = `CREATE MATERIALIZED VIEW analytics.events_summary_mv
+        TO analytics.events_summary
+        (\`snapshot_id\` UUID, \`user_id\` UInt64, \`account_id\` String, \`account_slug\` String)`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('analytics.events_summary_mv')
+      expect(result.materializedView?.toTable).toBe('analytics.events_summary')
+      expect(result.materializedView?.columns).toHaveLength(4)
+      expect(result.materializedView?.selectQuery).toBeUndefined() // system.tables format doesn't include SELECT
+    })
+
+    it('parses hybrid format with both columns and SELECT query', () => {
+      const sql = `CREATE MATERIALIZED VIEW test_mv
+        TO test_table
+        (id UInt64, name String)
+        AS SELECT id, name FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.name).toBe('test_mv')
+      expect(result.materializedView?.toTable).toBe('test_table')
+      expect(result.materializedView?.columns).toHaveLength(2)
+      expect(result.materializedView?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses system.tables format with complex types', () => {
+      const sql = `CREATE MATERIALIZED VIEW test_mv
+        TO test_table
+        (tags Array(String), metadata Map(String, String), created_at DateTime)`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
+      expect(result.materializedView?.columns).toHaveLength(3)
+      expect(result.materializedView?.columns?.[0].type).toBe('Array(String)')
+      expect(result.materializedView?.columns?.[1].type).toBe('Map(String, String)')
+      expect(result.materializedView?.columns?.[2].type).toBe('DateTime')
+    })
+  })
 })
