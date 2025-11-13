@@ -1,6 +1,6 @@
 {
     "name": "clickhouse-ddl-parser",
-    "version": "0.0.19",
+    "version": "0.0.20",
     "type": "module",
     "description": "A robust parser for ClickHouse DDL statements",
     "main": "dist/cjs/src/index.js",
