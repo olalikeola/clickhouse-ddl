@@ -1010,6 +1010,61 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('LowCardinality')
     })
 
+    it('parses CREATE VIEW with IS NULL in if() function calls', () => {
+      const sql = `CREATE VIEW analytics.merged_data_view AS
+        WITH merged_records AS (
+          SELECT
+            if((t.1) IS NULL, generateUUIDv4(), t.1) AS record_id,
+            if((t.2) IS NULL, now(), t.2) AS created_at,
+            if((t.6) IS NULL, 'default', t.6) AS tier_name
+          FROM analytics.raw_data t
+        )
+        SELECT record_id, created_at, tier_name
+        FROM merged_records`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.merged_data_view')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('generateUUIDv4')
+    })
+
+    it('parses CREATE VIEW with IS NULL in WHERE clause', () => {
+      const sql = `CREATE VIEW filtered_users AS
+        SELECT id, name, email
+        FROM users
+        WHERE email IS NULL
+          OR phone IS NULL`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('email')
+      expect(result.view?.selectQuery).toContain('phone')
+    })
+
+    it('parses CREATE VIEW with IS NULL in CASE expressions', () => {
+      const sql = `CREATE VIEW user_status AS
+        SELECT
+          id,
+          CASE
+            WHEN email IS NULL THEN 'no_email'
+            WHEN phone IS NULL THEN 'no_phone'
+            ELSE 'complete'
+          END AS status
+        FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('CASE')
+      expect(result.view?.selectQuery).toContain('WHEN')
+    })
+
     it('parses CREATE VIEW with complex if() and window functions', () => {
       const sql = `CREATE VIEW analytics.latest_records_view AS
         WITH ranked_records AS (
