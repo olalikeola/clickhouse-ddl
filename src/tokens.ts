@@ -6,7 +6,8 @@ export const Table = createToken({ name: 'Table', pattern: /TABLE(?![a-zA-Z0-9_.
 export const View = createToken({ name: 'View', pattern: /VIEW(?![a-zA-Z0-9_])/i })
 export const To = createToken({ name: 'To', pattern: /TO(?![a-zA-Z0-9_])/i })
 export const As = createToken({ name: 'As', pattern: /AS(?![a-zA-Z0-9_])/i })
-export const If = createToken({ name: 'If', pattern: /IF(?![a-zA-Z0-9_])/i })
+// Only match IF when it's the keyword (followed by NOT), not the if() function
+export const If = createToken({ name: 'If', pattern: /IF(?=\s+NOT)/i })
 export const Not = createToken({ name: 'Not', pattern: /NOT(?![a-zA-Z0-9_])/i })
 export const Exists = createToken({ name: 'Exists', pattern: /EXISTS(?![a-zA-Z0-9_])/i })
 export const Engine = createToken({ name: 'Engine', pattern: /ENGINE(?![a-zA-Z0-9_])/i })
@@ -28,6 +29,9 @@ export const LBracket = createToken({ name: 'LBracket', pattern: /\[/ })
 export const RBracket = createToken({ name: 'RBracket', pattern: /\]/ })
 export const Comma = createToken({ name: 'Comma', pattern: /,/ })
 export const Dot = createToken({ name: 'Dot', pattern: /\./ })
+export const Colon = createToken({ name: 'Colon', pattern: /:/ })
+export const LCurly = createToken({ name: 'LCurly', pattern: /\{/ })
+export const RCurly = createToken({ name: 'RCurly', pattern: /\}/ })
 
 // Comparison operators - ORDER MATTERS! More specific patterns first
 export const NotEquals = createToken({ name: 'NotEquals', pattern: /!=/ })
@@ -115,6 +119,9 @@ export const allTokens = [
   RBracket,
   Comma,
   Dot,
+  Colon,
+  LCurly,
+  RCurly,
   // Comparison operators - more specific first
   NotEquals,
   GreaterThanOrEqual,

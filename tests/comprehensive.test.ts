@@ -412,13 +412,13 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
   describe('Schema-Qualified Table Names', () => {
     it('parses schema-qualified table names', () => {
-      const sql = `CREATE TABLE socket.users (
+      const sql = `CREATE TABLE mydb.users (
         id UInt64,
         name String
       ) ENGINE = MergeTree()`
-      
+
       const result = parse(sql)
-      expect(result.name).toBe('socket.users')
+      expect(result.name).toBe('mydb.users')
       expect(result.columns).toHaveLength(2)
     })
 
@@ -538,14 +538,14 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
   describe('Backtick Identifiers', () => {
     it('parses backtick-quoted column names', () => {
       const sql = `CREATE TABLE test (
-        \`org_id\` UInt64,
+        \`account_id\` UInt64,
         \`user-name\` String,
         \`created_at\` DateTime
       ) ENGINE = MergeTree()`
 
       const result = parse(sql)
       expect(result.columns).toHaveLength(3)
-      expect(result.columns[0].name).toBe('org_id')
+      expect(result.columns[0].name).toBe('account_id')
       expect(result.columns[1].name).toBe('user-name')
       expect(result.columns[2].name).toBe('created_at')
     })
@@ -570,14 +570,14 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     })
 
     it('handles mixed backtick and regular identifiers', () => {
-      const sql = `CREATE TABLE socket.\`my-table\` (
+      const sql = `CREATE TABLE mydb.\`my-table\` (
         id UInt64,
         \`user-id\` UInt64,
         name String
       ) ENGINE = MergeTree()`
 
       const result = parse(sql)
-      expect(result.name).toBe('socket.my-table')
+      expect(result.name).toBe('mydb.my-table')
       expect(result.columns[0].name).toBe('id')
       expect(result.columns[1].name).toBe('user-id')
       expect(result.columns[2].name).toBe('name')
@@ -585,24 +585,24 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
     it('parses backtick identifiers with defaults and modifiers', () => {
       const sql = `CREATE TABLE test (
-        \`org_id\` UInt64 DEFAULT toUInt64(organization_id),
-        \`plan_name\` Enum8('free' = 0, 'team' = 1) DEFAULT 'enterprise',
-        \`repo_labels\` Array(String) DEFAULT [],
-        \`alert_type\` LowCardinality(String),
-        \`computed_field\` UInt64 MATERIALIZED \`org_id\` * 100
+        \`entity_id\` UInt64 DEFAULT toUInt64(parent_id),
+        \`tier_name\` Enum8('basic' = 0, 'pro' = 1) DEFAULT 'premium',
+        \`labels\` Array(String) DEFAULT [],
+        \`category\` LowCardinality(String),
+        \`computed_field\` UInt64 MATERIALIZED \`entity_id\` * 100
       ) ENGINE = MergeTree()`
 
       const result = parse(sql)
       expect(result.columns).toHaveLength(5)
-      expect(result.columns[0].name).toBe('org_id')
-      expect(result.columns[0].default).toBe('toUInt64(organization_id)')
-      expect(result.columns[1].name).toBe('plan_name')
-      expect(result.columns[1].default).toBe("'enterprise'")
-      expect(result.columns[2].name).toBe('repo_labels')
+      expect(result.columns[0].name).toBe('entity_id')
+      expect(result.columns[0].default).toBe('toUInt64(parent_id)')
+      expect(result.columns[1].name).toBe('tier_name')
+      expect(result.columns[1].default).toBe("'premium'")
+      expect(result.columns[2].name).toBe('labels')
       expect(result.columns[2].default).toBe('[]')
-      expect(result.columns[3].name).toBe('alert_type')
+      expect(result.columns[3].name).toBe('category')
       expect(result.columns[4].name).toBe('computed_field')
-      expect(result.columns[4].materialized).toBe('org_id * 100')
+      expect(result.columns[4].materialized).toBe('entity_id * 100')
     })
 
     it('handles backtick identifiers in expressions', () => {
@@ -638,14 +638,14 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
     it('parses multi-line default expressions', () => {
       const sql = `CREATE TABLE test (
-        org_snapshot_started_at_start_of_day DateTime DEFAULT toStartOfDay(
-          org_snapshot_started_at
+        event_date_start_of_day DateTime DEFAULT toStartOfDay(
+          event_timestamp
         )
       ) ENGINE = MergeTree()`
 
       const result = parse(sql)
-      expect(result.columns[0].name).toBe('org_snapshot_started_at_start_of_day')
-      expect(result.columns[0].default).toBe('toStartOfDay(org_snapshot_started_at)')
+      expect(result.columns[0].name).toBe('event_date_start_of_day')
+      expect(result.columns[0].default).toBe('toStartOfDay(event_timestamp)')
     })
 
     it('parses comparison operators in expressions', () => {
@@ -802,7 +802,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     })
 
     it('parses production-style table with PRIMARY KEY and ORDER BY (with parens)', () => {
-      const sql = `CREATE TABLE socket.webhook_events (
+      const sql = `CREATE TABLE analytics.system_events (
         id UUID,
         event_type String,
         payload String,
@@ -812,13 +812,13 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       ORDER BY (created_at, id)`
 
       const result = parse(sql)
-      expect(result.name).toBe('socket.webhook_events')
+      expect(result.name).toBe('analytics.system_events')
       expect(result.engine).toBe('ReplicatedMergeTree')
       expect(result.columns.length).toBe(4)
     })
 
     it('parses production-style table with ORDER BY (no parens)', () => {
-      const sql = `CREATE TABLE socket.webhook_events (
+      const sql = `CREATE TABLE analytics.system_events (
         id UUID,
         event_type String,
         payload String,
@@ -827,7 +827,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       ORDER BY created_at, id`
 
       const result = parse(sql)
-      expect(result.name).toBe('socket.webhook_events')
+      expect(result.name).toBe('analytics.system_events')
       expect(result.engine).toBe('ReplicatedMergeTree')
       expect(result.columns.length).toBe(4)
       expect(result.orderBy).toEqual(['created_at', 'id'])
@@ -935,6 +935,65 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('row_number')
     })
 
+    it('parses CREATE VIEW with if() function in WHERE clause', () => {
+      const sql = `CREATE VIEW analytics.filtered_events_view AS
+        SELECT user_id, event_type, event_timestamp
+        FROM analytics.events
+        WHERE if(length({selected_ids:Array(String)}) > 0, user_id IN ({selected_ids:Array(String)}), true)
+          AND if({category:String} = 'basic', tier = 'basic', tier != 'basic')`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.filtered_events_view')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('length')
+      expect(result.view?.selectQuery).toContain('selected_ids')
+    })
+
+    it('parses CREATE VIEW with parameterized query syntax', () => {
+      const sql = `CREATE VIEW reports AS
+        SELECT id, name
+        FROM users
+        WHERE id IN ({ids:Array(UInt64)})
+          AND status = {status:String}
+          AND created_at > {start_date:DateTime}`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('ids')
+      expect(result.view?.selectQuery).toContain('Array')
+      expect(result.view?.selectQuery).toContain('status')
+      expect(result.view?.selectQuery).toContain('start_date')
+    })
+
+    it('parses CREATE VIEW with complex if() and window functions', () => {
+      const sql = `CREATE VIEW analytics.latest_records_view AS
+        WITH ranked_records AS (
+          SELECT
+            user_id,
+            entity_id,
+            record_timestamp,
+            record_id,
+            rank() OVER (
+              PARTITION BY entity_id, record_timestamp
+              ORDER BY record_timestamp DESC
+            ) AS record_rank
+          FROM analytics.records
+          WHERE if(length({filter_ids:Array(String)}) > 0, entity_id IN ({filter_ids:Array(String)}), true)
+        )
+        SELECT user_id, entity_id, record_id
+        FROM ranked_records
+        WHERE record_rank = 1`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.latest_records_view')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('rank')
+      expect(result.view?.selectQuery).toContain('filter_ids')
+    })
+
     it('backwards compatibility: parse() still works for CREATE TABLE', () => {
       const sql = `CREATE TABLE users (id UInt64, name String) ENGINE = MergeTree()`
 
@@ -953,7 +1012,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       SELECT
         snapshot_id AS last_snapshot_id,
         user_id AS last_user_id,
-        org_id AS last_org_id
+        entity_id AS last_entity_id
       FROM analytics.raw_events`
 
       const result = parseStatement(sql)
@@ -1023,7 +1082,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
     it('parses system.tables format with column definitions', () => {
       const sql = `CREATE MATERIALIZED VIEW analytics.daily_summary_mv
         TO analytics.daily_summary
-        (\`snapshot_id\` UUID, \`user_id\` UInt64, \`org_id\` String)`
+        (\`snapshot_id\` UUID, \`user_id\` UInt64, \`entity_id\` String)`
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_MATERIALIZED_VIEW')
@@ -1035,7 +1094,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.materializedView?.columns?.[0].type).toBe('UUID')
       expect(result.materializedView?.columns?.[1].name).toBe('user_id')
       expect(result.materializedView?.columns?.[1].type).toBe('UInt64')
-      expect(result.materializedView?.columns?.[2].name).toBe('org_id')
+      expect(result.materializedView?.columns?.[2].name).toBe('entity_id')
       expect(result.materializedView?.columns?.[2].type).toBe('String')
     })
 
