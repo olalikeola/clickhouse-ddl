@@ -1237,4 +1237,437 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.materializedView?.columns?.[2].type).toBe('DateTime')
     })
   })
+
+  describe('NOT expressions - Phase 8', () => {
+    it('parses CREATE VIEW with NOT IN and tuple comparison (bug report case)', () => {
+      const sql = `CREATE VIEW analytics.filtered_alerts_view AS
+        SELECT
+          column1,
+          column2,
+          alert_key,
+          alert_status
+        FROM analytics.alerts
+        WHERE
+          (
+            column1,
+            column2,
+            alert_key
+          ) NOT IN (
+            SELECT
+              column1,
+              column2,
+              alert_key
+            FROM analytics.dismissed_alerts
+          )`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.filtered_alerts_view')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('column1')
+      expect(result.view?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE VIEW with IS NOT NULL', () => {
+      const sql = `CREATE VIEW active_users AS
+        SELECT id, name, email, phone
+        FROM users
+        WHERE email IS NOT NULL
+          AND phone IS NOT NULL`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('AND')
+    })
+
+    it('parses CREATE VIEW with NOT LIKE', () => {
+      const sql = `CREATE VIEW filtered_products AS
+        SELECT id, name, category
+        FROM products
+        WHERE name NOT LIKE '%test%'
+          AND category NOT LIKE '%deprecated%'`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('LIKE')
+      expect(result.view?.selectQuery).toContain('test')
+    })
+
+    it('parses CREATE VIEW with NOT BETWEEN', () => {
+      const sql = `CREATE VIEW active_sessions AS
+        SELECT session_id, user_id, created_at
+        FROM sessions
+        WHERE session_id NOT BETWEEN 1000 AND 2000`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('BETWEEN')
+      expect(result.view?.selectQuery).toContain('AND')
+    })
+
+    it('parses CREATE VIEW with IN (without NOT)', () => {
+      const sql = `CREATE VIEW privileged_users AS
+        SELECT id, name, role
+        FROM users
+        WHERE role IN ('admin', 'moderator', 'editor')`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('admin')
+    })
+
+    it('parses CREATE VIEW with AND/OR logical operators', () => {
+      const sql = `CREATE VIEW complex_filter AS
+        SELECT id, status, priority
+        FROM tasks
+        WHERE (status = 'active' AND priority > 5)
+          OR (status = 'pending' AND priority > 8)`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('AND')
+      expect(result.view?.selectQuery).toContain('OR')
+    })
+  })
+
+  describe('CREATE OR REPLACE VIEW - Phase 9', () => {
+    it('parses CREATE OR REPLACE VIEW', () => {
+      const sql = `CREATE OR REPLACE VIEW test_view AS SELECT 1 AS value`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('test_view')
+      expect(result.view?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE OR REPLACE VIEW with IF NOT EXISTS', () => {
+      const sql = `CREATE OR REPLACE VIEW IF NOT EXISTS analytics.summary_view AS
+        SELECT id, name, status
+        FROM analytics.data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.summary_view')
+      expect(result.view?.selectQuery).toContain('SELECT')
+    })
+
+    it('parses CREATE OR REPLACE VIEW with schema qualification', () => {
+      const sql = `CREATE OR REPLACE VIEW mydb.report_view AS
+        SELECT user_id, COUNT(*) AS total
+        FROM mydb.events
+        GROUP BY user_id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('mydb.report_view')
+      expect(result.view?.selectQuery).toContain('COUNT')
+    })
+  })
+
+  describe('UNION/UNION ALL - Phase 10', () => {
+    it('parses CREATE VIEW with UNION ALL', () => {
+      const sql = `CREATE VIEW combined_users AS
+        SELECT id, name FROM active_users
+        UNION ALL
+        SELECT id, name FROM archived_users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('combined_users')
+      expect(result.view?.selectQuery).toContain('UNION')
+      expect(result.view?.selectQuery).toContain('ALL')
+    })
+
+    it('parses CREATE VIEW with UNION (without ALL)', () => {
+      const sql = `CREATE VIEW unique_users AS
+        SELECT user_id FROM table1
+        UNION
+        SELECT user_id FROM table2`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('UNION')
+    })
+
+    it('parses CREATE VIEW with multiple UNION ALL', () => {
+      const sql = `CREATE VIEW all_events AS
+        SELECT event_id, event_type FROM events_2023
+        UNION ALL
+        SELECT event_id, event_type FROM events_2024
+        UNION ALL
+        SELECT event_id, event_type FROM events_2025`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('UNION')
+      expect(result.view?.selectQuery).toContain('ALL')
+    })
+  })
+
+  describe('CAST expressions - Phase 11', () => {
+    it('parses CREATE VIEW with CAST to Enum', () => {
+      const sql = `CREATE VIEW status_view AS
+        SELECT id, CAST('active' AS Enum('active', 'inactive', 'pending')) AS status
+        FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view?.selectQuery).toContain('Enum')
+    })
+
+    it('parses CREATE VIEW with multiple CAST expressions', () => {
+      const sql = `CREATE VIEW typed_data AS
+        SELECT
+          CAST(user_id AS String) AS user_str,
+          CAST(created_at AS DateTime) AS created_datetime
+        FROM raw_data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('CAST')
+    })
+  })
+
+  describe('Lambda functions - Phase 12', () => {
+    it('parses CREATE VIEW with lambda function (arrow operator)', () => {
+      const sql = `CREATE VIEW filtered_data AS
+        SELECT
+          user_id,
+          has(arrayMap(x -> toUInt64(x), ['1', '2', '3']), account_id) AS has_account
+        FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('arrayMap')
+      expect(result.view?.selectQuery).toContain('toUInt64')
+    })
+
+    it('parses CREATE VIEW with complex lambda', () => {
+      const sql = `CREATE VIEW transformed AS
+        SELECT arrayFilter(x -> x > 10, numbers) AS filtered
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('arrayFilter')
+    })
+  })
+
+  describe('INTERVAL arithmetic - Phase 13', () => {
+    it('parses CREATE VIEW with INTERVAL DAYS', () => {
+      const sql = `CREATE VIEW recent_data AS
+        SELECT id, created_at
+        FROM events
+        WHERE created_at >= toStartOfDay(now()) - INTERVAL 7 DAYS`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('DAYS')
+    })
+
+    it('parses CREATE VIEW with multiple INTERVAL units', () => {
+      const sql = `CREATE VIEW time_ranges AS
+        SELECT
+          now() - INTERVAL 1 HOUR AS hour_ago,
+          now() - INTERVAL 30 MINUTES AS minutes_ago,
+          now() - INTERVAL 1 WEEK AS week_ago
+        FROM system.numbers LIMIT 1`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('HOUR')
+      expect(result.view?.selectQuery).toContain('MINUTES')
+      expect(result.view?.selectQuery).toContain('WEEK')
+    })
+  })
+
+  describe('ARRAY JOIN - Phase 14', () => {
+    it('parses CREATE VIEW with ARRAY JOIN', () => {
+      const sql = `CREATE VIEW expanded_data AS
+        SELECT t.1 AS value1, t.2 AS value2
+        FROM (SELECT ['a', 'b', 'c'] AS arr) ARRAY JOIN arr AS t`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('ARRAY')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+
+    it('parses CREATE VIEW with parameterized ARRAY JOIN', () => {
+      const sql = `CREATE VIEW param_array AS
+        SELECT t.*
+        FROM (SELECT {data:Array(Tuple(String, UInt64))} AS arr) ARRAY JOIN arr AS t`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('ARRAY')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+  })
+
+  describe('WITH CTEs - Phase 15', () => {
+    it('parses CREATE VIEW with WITH CTE', () => {
+      const sql = `CREATE VIEW cte_view AS
+        WITH active_users AS (
+          SELECT user_id FROM users WHERE status = 'active'
+        )
+        SELECT * FROM active_users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('active_users')
+    })
+
+    it('parses CREATE VIEW with multiple CTEs', () => {
+      const sql = `CREATE VIEW multi_cte AS
+        WITH
+          cte1 AS (SELECT 1 AS x),
+          cte2 AS (SELECT x * 2 AS y FROM cte1)
+        SELECT * FROM cte2`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('cte1')
+      expect(result.view?.selectQuery).toContain('cte2')
+    })
+  })
+
+  describe('JOIN keywords - Phase 16', () => {
+    it('parses CREATE VIEW with INNER JOIN', () => {
+      const sql = `CREATE VIEW joined_data AS
+        SELECT u.id, u.name, o.order_id
+        FROM users AS u
+        INNER JOIN orders AS o ON u.id = o.user_id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('ON')
+    })
+
+    it('parses CREATE VIEW with LEFT JOIN', () => {
+      const sql = `CREATE VIEW left_join_view AS
+        SELECT a.id, b.value
+        FROM table_a AS a
+        LEFT JOIN table_b AS b ON a.id = b.id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('LEFT')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+
+    it('parses CREATE VIEW with multiple JOIN conditions', () => {
+      const sql = `CREATE VIEW complex_join AS
+        SELECT *
+        FROM t1
+        INNER JOIN t2 ON t1.col1 = t2.col1 AND t1.col2 = t2.col2
+        LEFT JOIN t3 ON t2.col3 = t3.col3`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('LEFT')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+
+    it('parses CREATE VIEW with RIGHT JOIN', () => {
+      const sql = `CREATE VIEW right_join_view AS
+        SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('RIGHT')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+
+    it('parses CREATE VIEW with CROSS JOIN', () => {
+      const sql = `CREATE VIEW cross_join_view AS
+        SELECT * FROM t1 CROSS JOIN t2`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('CROSS')
+      expect(result.view?.selectQuery).toContain('JOIN')
+    })
+  })
+
+  describe('<> operator - Phase 17', () => {
+    it('parses CREATE VIEW with <> not equals operator', () => {
+      const sql = `CREATE VIEW filtered AS
+        SELECT id, name
+        FROM users
+        WHERE status <> 'deleted' AND role <> 'guest'`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('status')
+      expect(result.view?.selectQuery).toContain('deleted')
+    })
+
+    it('parses CREATE VIEW with both != and <> operators', () => {
+      const sql = `CREATE VIEW mixed_operators AS
+        SELECT *
+        FROM data
+        WHERE col1 != 'a' AND col2 <> 'b'`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('col1')
+      expect(result.view?.selectQuery).toContain('col2')
+    })
+  })
+
+  describe('Complex combinations - All phases', () => {
+    it('parses CREATE VIEW with complex SQL combining multiple features', () => {
+      const sql = `CREATE OR REPLACE VIEW analytics.comprehensive_view AS
+        WITH filtered AS (
+          SELECT
+            if(user_id IS NULL, 0, user_id) AS user_id,
+            created_at
+          FROM events
+          WHERE status NOT IN ('deleted', 'archived')
+            AND created_at >= now() - INTERVAL 30 DAYS
+        )
+        SELECT
+          f.user_id,
+          COUNT(*) AS event_count,
+          CAST(AVG(value) AS Float64) AS avg_value
+        FROM filtered AS f
+        INNER JOIN users AS u ON f.user_id = u.id
+        WHERE u.role <> 'guest'
+        GROUP BY f.user_id
+        HAVING event_count > 10
+        ORDER BY event_count DESC
+        LIMIT 100`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.comprehensive_view')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('DAYS')
+      expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('GROUP')
+      expect(result.view?.selectQuery).toContain('HAVING')
+      expect(result.view?.selectQuery).toContain('LIMIT')
+    })
+  })
 })

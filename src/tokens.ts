@@ -22,6 +22,48 @@ export const OrderBy = createToken({ name: 'OrderBy', pattern: /ORDER\s+BY(?![a-
 export const PartitionBy = createToken({ name: 'PartitionBy', pattern: /PARTITION\s+BY(?![a-zA-Z0-9_])/i })
 export const Settings = createToken({ name: 'Settings', pattern: /SETTINGS(?![a-zA-Z0-9_])/i })
 
+// SQL operators and keywords for WHERE clauses, JOIN conditions, etc.
+export const In = createToken({ name: 'In', pattern: /IN(?![a-zA-Z0-9_])/i })
+export const And = createToken({ name: 'And', pattern: /AND(?![a-zA-Z0-9_])/i })
+export const Or = createToken({ name: 'Or', pattern: /OR(?![a-zA-Z0-9_])/i })
+export const Like = createToken({ name: 'Like', pattern: /LIKE(?![a-zA-Z0-9_])/i })
+export const Between = createToken({ name: 'Between', pattern: /BETWEEN(?![a-zA-Z0-9_])/i })
+export const Replace = createToken({ name: 'Replace', pattern: /REPLACE(?![a-zA-Z0-9_])/i })
+export const Union = createToken({ name: 'Union', pattern: /UNION(?![a-zA-Z0-9_])/i })
+export const All = createToken({ name: 'All', pattern: /ALL(?![a-zA-Z0-9_])/i })
+export const Cast = createToken({ name: 'Cast', pattern: /CAST(?![a-zA-Z0-9_])/i })
+export const With = createToken({ name: 'With', pattern: /WITH(?![a-zA-Z0-9_])/i })
+export const Join = createToken({ name: 'Join', pattern: /JOIN(?![a-zA-Z0-9_])/i })
+export const Inner = createToken({ name: 'Inner', pattern: /INNER(?![a-zA-Z0-9_])/i })
+export const Left = createToken({ name: 'Left', pattern: /LEFT(?![a-zA-Z0-9_])/i })
+export const Right = createToken({ name: 'Right', pattern: /RIGHT(?![a-zA-Z0-9_])/i })
+export const Full = createToken({ name: 'Full', pattern: /FULL(?![a-zA-Z0-9_])/i })
+export const Cross = createToken({ name: 'Cross', pattern: /CROSS(?![a-zA-Z0-9_])/i })
+export const On = createToken({ name: 'On', pattern: /ON(?![a-zA-Z0-9_])/i })
+export const Using = createToken({ name: 'Using', pattern: /USING(?![a-zA-Z0-9_])/i })
+export const Interval = createToken({ name: 'Interval', pattern: /INTERVAL(?![a-zA-Z0-9_])/i })
+export const Day = createToken({ name: 'Day', pattern: /DAY(?![a-zA-Z0-9_])/i })
+export const Days = createToken({ name: 'Days', pattern: /DAYS(?![a-zA-Z0-9_])/i })
+export const Hour = createToken({ name: 'Hour', pattern: /HOUR(?![a-zA-Z0-9_])/i })
+export const Hours = createToken({ name: 'Hours', pattern: /HOURS(?![a-zA-Z0-9_])/i })
+export const Minute = createToken({ name: 'Minute', pattern: /MINUTE(?![a-zA-Z0-9_])/i })
+export const Minutes = createToken({ name: 'Minutes', pattern: /MINUTES(?![a-zA-Z0-9_])/i })
+export const Second = createToken({ name: 'Second', pattern: /SECOND(?![a-zA-Z0-9_])/i })
+export const Seconds = createToken({ name: 'Seconds', pattern: /SECONDS(?![a-zA-Z0-9_])/i })
+export const Week = createToken({ name: 'Week', pattern: /WEEK(?![a-zA-Z0-9_])/i })
+export const Weeks = createToken({ name: 'Weeks', pattern: /WEEKS(?![a-zA-Z0-9_])/i })
+export const Month = createToken({ name: 'Month', pattern: /MONTH(?![a-zA-Z0-9_])/i })
+export const Months = createToken({ name: 'Months', pattern: /MONTHS(?![a-zA-Z0-9_])/i })
+export const Year = createToken({ name: 'Year', pattern: /YEAR(?![a-zA-Z0-9_])/i })
+export const Years = createToken({ name: 'Years', pattern: /YEARS(?![a-zA-Z0-9_])/i })
+export const Select = createToken({ name: 'Select', pattern: /SELECT(?![a-zA-Z0-9_])/i })
+export const From = createToken({ name: 'From', pattern: /FROM(?![a-zA-Z0-9_])/i })
+export const Where = createToken({ name: 'Where', pattern: /WHERE(?![a-zA-Z0-9_])/i })
+export const GroupBy = createToken({ name: 'GroupBy', pattern: /GROUP\\s+BY(?![a-zA-Z0-9_])/i })
+export const Having = createToken({ name: 'Having', pattern: /HAVING(?![a-zA-Z0-9_])/i })
+export const Limit = createToken({ name: 'Limit', pattern: /LIMIT(?![a-zA-Z0-9_])/i })
+export const Offset = createToken({ name: 'Offset', pattern: /OFFSET(?![a-zA-Z0-9_])/i })
+
 // Symbols
 export const LParen = createToken({ name: 'LParen', pattern: /\(/ })
 export const RParen = createToken({ name: 'RParen', pattern: /\)/ })
@@ -34,7 +76,9 @@ export const LCurly = createToken({ name: 'LCurly', pattern: /\{/ })
 export const RCurly = createToken({ name: 'RCurly', pattern: /\}/ })
 
 // Comparison operators - ORDER MATTERS! More specific patterns first
+export const Arrow = createToken({ name: 'Arrow', pattern: /->/ })
 export const NotEquals = createToken({ name: 'NotEquals', pattern: /!=/ })
+export const NotEquals2 = createToken({ name: 'NotEquals2', pattern: /<>/ })
 export const GreaterThanOrEqual = createToken({ name: 'GreaterThanOrEqual', pattern: />=/ })
 export const LessThanOrEqual = createToken({ name: 'LessThanOrEqual', pattern: /<=/ })
 export const GreaterThan = createToken({ name: 'GreaterThan', pattern: />/ })
@@ -113,6 +157,46 @@ export const allTokens = [
   OrderBy,
   PartitionBy,
   Settings,
+  In,
+  And,
+  Or,
+  Like,
+  Between,
+  Replace,
+  Union,
+  All,
+  Cast,
+  With,
+  GroupBy, // Must come before Join since it has multiple words
+  Join,
+  Inner,
+  Left,
+  Right,
+  Full,
+  Cross,
+  On,
+  Using,
+  Interval,
+  Days, // Plural forms must come before singular
+  Day,
+  Hours,
+  Hour,
+  Minutes,
+  Minute,
+  Seconds,
+  Second,
+  Weeks,
+  Week,
+  Months,
+  Month,
+  Years,
+  Year,
+  Select,
+  From,
+  Where,
+  Having,
+  Limit,
+  Offset,
   LParen,
   RParen,
   LBracket,
@@ -122,8 +206,10 @@ export const allTokens = [
   Colon,
   LCurly,
   RCurly,
-  // Comparison operators - more specific first
+  // Comparison operators and special symbols - more specific first
+  Arrow,
   NotEquals,
+  NotEquals2,
   GreaterThanOrEqual,
   LessThanOrEqual,
   GreaterThan,
