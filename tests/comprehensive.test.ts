@@ -1670,4 +1670,105 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('LIMIT')
     })
   })
+
+  describe('Escaped quotes in string literals - Phase 18', () => {
+    it('parses CREATE VIEW with backslash-escaped single quotes', () => {
+      const sql = `CREATE VIEW escaped_quotes AS
+        SELECT
+          id,
+          'string with \\'escaped\\' quotes' AS text1,
+          'it\\'s working' AS text2
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('escaped_quotes')
+      expect(result.view?.selectQuery).toContain('string')
+      expect(result.view?.selectQuery).toContain('escaped')
+    })
+
+    it('parses CREATE VIEW with doubled single quotes', () => {
+      const sql = `CREATE VIEW doubled_quotes AS
+        SELECT
+          id,
+          'string with ''doubled'' quotes' AS text1,
+          'it''s working' AS text2
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('doubled_quotes')
+      expect(result.view?.selectQuery).toContain('doubled')
+    })
+
+    it('parses CREATE VIEW with escaped quotes in if() default values', () => {
+      const sql = `CREATE VIEW defaults_with_escapes AS
+        SELECT
+          if(plan IS NULL, 'enterprise', plan) AS plan_name,
+          if(repo IS NULL, '', repo) AS repo_id,
+          if(status IS NULL, 'it\\'s active', status) AS status_text
+        FROM users`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('enterprise')
+      expect(result.view?.selectQuery).toContain('if')
+    })
+
+    it('parses CREATE VIEW with backslash-escaped double quotes', () => {
+      const sql = `CREATE VIEW double_quoted AS
+        SELECT
+          id,
+          "string with \\"escaped\\" quotes" AS text
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('string')
+    })
+
+    it('parses CREATE VIEW with mixed escape styles', () => {
+      const sql = `CREATE VIEW mixed_escapes AS
+        SELECT
+          'single with \\'escape\\'' AS text1,
+          'single with ''doubled''' AS text2,
+          "double with \\"escape\\"" AS text3,
+          "double with ""doubled""" AS text4
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('single')
+      expect(result.view?.selectQuery).toContain('double')
+    })
+
+    it('parses CREATE VIEW with complex tupleElement defaults including escaped quotes', () => {
+      const sql = `CREATE VIEW tuple_defaults AS
+        WITH input_data AS (
+          SELECT {data:Array(Tuple(Nullable(String), Nullable(UInt64)))} AS arr
+        )
+        SELECT
+          if(isNull(tupleElement(t, 1)), 'default\\'s value', tupleElement(t, 1)) AS col1,
+          if(isNull(tupleElement(t, 2)), 0, tupleElement(t, 2)) AS col2
+        FROM input_data ARRAY JOIN arr AS t`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('tupleElement')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('isNull')
+    })
+
+    it('parses CREATE VIEW with empty string literals', () => {
+      const sql = `CREATE VIEW empty_strings AS
+        SELECT
+          if(col IS NULL, '', col) AS value1,
+          if(col2 IS NULL, "", col2) AS value2
+        FROM data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('if')
+    })
+  })
 })

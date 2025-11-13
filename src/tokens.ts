@@ -129,7 +129,7 @@ export const Date32 = createToken({ name: 'Date32', pattern: /Date32(?![a-zA-Z0-
 // Others
 export const LineComment = createToken({ name: 'LineComment', pattern: /--[^\n\r]*/, group: Lexer.SKIPPED })
 export const NumberLiteral = createToken({ name: 'NumberLiteral', pattern: /[0-9]+(\.[0-9]+)?/ })
-export const StringLiteral = createToken({ name: 'StringLiteral', pattern: /'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"/ })
+export const StringLiteral = createToken({ name: 'StringLiteral', pattern: /'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"/ })
 export const BacktickIdentifier = createToken({ name: 'BacktickIdentifier', pattern: /`[^`]+`/ })
 export const Identifier = createToken({ name: 'Identifier', pattern: /[a-zA-Z_][a-zA-Z0-9_\$]*/ })
 export const WhiteSpace = createToken({ name: 'WhiteSpace', pattern: /[ \t\n\r]+/, group: Lexer.SKIPPED })
