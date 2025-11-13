@@ -265,6 +265,9 @@ class ClickHouseParser extends CstParser {
         { ALT: () => this.CONSUME(Minus) },
         { ALT: () => this.CONSUME(Star) },
         { ALT: () => this.CONSUME(Slash) },
+        // SQL keywords that can appear in SELECT queries (window functions, CTEs, etc.)
+        { ALT: () => this.CONSUME(PartitionBy) },
+        { ALT: () => this.CONSUME(OrderBy) },
         // Add data type tokens that might appear in SELECT queries (CAST, etc.)
         { ALT: () => this.CONSUME(String) },
         { ALT: () => this.CONSUME(UInt8) },

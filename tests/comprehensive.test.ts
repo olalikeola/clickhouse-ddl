@@ -893,6 +893,48 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('GROUP')
     })
 
+    it('parses CREATE VIEW with window functions (PARTITION BY inside OVER)', () => {
+      const sql = `CREATE VIEW analytics.latest_events_view AS
+        WITH ranked_events AS (
+          SELECT
+            user_id,
+            event_type,
+            event_timestamp,
+            rank() OVER (
+              PARTITION BY user_id, event_type
+              ORDER BY event_timestamp DESC
+            ) AS event_rank
+          FROM analytics.events
+          WHERE event_timestamp > '2024-01-01'
+        )
+        SELECT user_id, event_type, event_timestamp
+        FROM ranked_events
+        WHERE event_rank = 1`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.name).toBe('analytics.latest_events_view')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('ORDER BY')
+      expect(result.view?.selectQuery).toContain('OVER')
+      expect(result.view?.selectQuery).toContain('rank')
+    })
+
+    it('parses CREATE VIEW with multiple window functions', () => {
+      const sql = `CREATE VIEW stats AS
+        SELECT
+          id,
+          rank() OVER (PARTITION BY category ORDER BY score DESC) as rank,
+          row_number() OVER (PARTITION BY category ORDER BY created_at) as row_num
+        FROM events`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('rank')
+      expect(result.view?.selectQuery).toContain('row_number')
+    })
+
     it('backwards compatibility: parse() still works for CREATE TABLE', () => {
       const sql = `CREATE TABLE users (id UInt64, name String) ENGINE = MergeTree()`
 
