@@ -90,6 +90,7 @@ export const Plus = createToken({ name: 'Plus', pattern: /\+/ })
 export const Minus = createToken({ name: 'Minus', pattern: /-/ })
 export const Star = createToken({ name: 'Star', pattern: /\*/ })
 export const Slash = createToken({ name: 'Slash', pattern: /\// })
+export const Percent = createToken({ name: 'Percent', pattern: /%/ })
 
 // ClickHouse specific data types - ORDER MATTERS! More specific first
 export const SimpleAggregateFunction = createToken({ name: 'SimpleAggregateFunction', pattern: /SimpleAggregateFunction(?![a-zA-Z0-9_])/i })
@@ -220,6 +221,7 @@ export const allTokens = [
   Minus,
   Star,
   Slash,
+  Percent,
   // Data types in order of specificity (most specific first)
   SimpleAggregateFunction,
   AggregateFunction,

@@ -1771,4 +1771,85 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.selectQuery).toContain('if')
     })
   })
+
+  describe('PARTITION BY with function calls - Phase 19', () => {
+    it('parses CREATE TABLE with function call in PARTITION BY (with parentheses)', () => {
+      const sql = `CREATE TABLE IF NOT EXISTS test.sbom_scans
+        (
+          id UUID,
+          scanned_at_start_of_day DateTime
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (
+          toYYYYMMDD(scanned_at_start_of_day)
+        )
+        ORDER BY (id)`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_TABLE')
+      expect(result.table?.name).toBe('test.sbom_scans')
+      expect(result.table?.engine).toBe('MergeTree')
+    })
+
+    it('parses CREATE TABLE with function call in PARTITION BY (without parentheses)', () => {
+      const sql = `CREATE TABLE test.events
+        (
+          event_id UInt64,
+          event_date Date
+        )
+        ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(event_date)
+        ORDER BY event_id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_TABLE')
+      expect(result.table?.name).toBe('test.events')
+    })
+
+    it('parses CREATE TABLE with multiple columns in PARTITION BY', () => {
+      const sql = `CREATE TABLE test.multi_partition
+        (
+          id UInt64,
+          region String,
+          event_date Date
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (region, toYYYYMM(event_date))
+        ORDER BY id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_TABLE')
+      expect(result.table?.name).toBe('test.multi_partition')
+    })
+
+    it('parses CREATE TABLE with nested function calls in PARTITION BY', () => {
+      const sql = `CREATE TABLE test.complex_partition
+        (
+          id UInt64,
+          created_at DateTime
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (toYYYYMMDD(toStartOfDay(created_at)))
+        ORDER BY id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_TABLE')
+      expect(result.table?.name).toBe('test.complex_partition')
+    })
+
+    it('parses CREATE TABLE with arithmetic in PARTITION BY', () => {
+      const sql = `CREATE TABLE test.arithmetic_partition
+        (
+          id UInt64,
+          value Int32
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (value + 10)
+        ORDER BY id`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_TABLE')
+      expect(result.table?.name).toBe('test.arithmetic_partition')
+    })
+  })
 })

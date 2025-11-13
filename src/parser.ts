@@ -84,6 +84,7 @@ import {
   Minus,
   Star,
   Slash,
+  Percent,
   // Data type tokens
   UInt8,
   UInt16,
@@ -198,7 +199,7 @@ class ClickHouseParser extends CstParser {
         AggregateFunction,
         SimpleAggregateFunction,
       ],
-      { recoveryEnabled: true },
+      { recoveryEnabled: true, maxLookahead: 5 },
     )
     this.performSelfAnalysis()
   }
@@ -465,7 +466,19 @@ class ClickHouseParser extends CstParser {
 
   private partitionByClause = this.RULE('partitionByClause', () => {
     this.CONSUME(PartitionBy)
+    // Optional parentheses around partition expression(s)
+    const hasParens = this.OPTION(() => this.CONSUME(LParen))
+
+    // One or more comma-separated expressions
     this.SUBRULE(this.simpleExpression)
+    this.MANY(() => {
+      this.CONSUME(Comma)
+      this.SUBRULE2(this.simpleExpression)
+    })
+
+    if (hasParens) {
+      this.CONSUME(RParen)
+    }
   })
 
   private settingsClause = this.RULE('settingsClause', () => {
@@ -496,6 +509,7 @@ class ClickHouseParser extends CstParser {
         { ALT: () => this.CONSUME(Minus) },
         { ALT: () => this.CONSUME(Star) },
         { ALT: () => this.CONSUME(Slash) },
+        { ALT: () => this.CONSUME(Percent) },
       ])
       this.SUBRULE2(this.expressionTerm)
     })
