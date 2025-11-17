@@ -85,6 +85,8 @@ import {
   Star,
   Slash,
   Percent,
+  Semicolon,
+  Other,
   // Data type tokens
   UInt8,
   UInt16,
@@ -306,22 +308,171 @@ class ClickHouseParser extends CstParser {
     })
   })
 
-  // NEW: Proper SELECT statement parser
+  // NEW: Query parser - gracefully handles SELECT queries and falls back for complex ones
   private selectQuery = this.RULE('selectQuery', () => {
-    this.CONSUME(Select)
-    this.SUBRULE(this.selectList)
-    this.OPTION(() => {
-      this.SUBRULE(this.fromClause)
-    })
-    this.OPTION2(() => {
-      this.SUBRULE(this.whereClause)
-    })
+    this.OR([
+      {
+        // Structured SELECT parsing for simple queries
+        GATE: () => this.LA(1).tokenType.name === 'Select',
+        ALT: () => {
+          this.CONSUME(Select)
+          this.SUBRULE(this.selectList)
+          this.OPTION(() => {
+            this.SUBRULE(this.fromClause)
+          })
+          this.OPTION2(() => {
+            this.SUBRULE(this.whereClause)
+          })
+          // Capture any remaining tokens (GROUP BY, ORDER BY, UNION, etc.)
+          this.MANY(() => {
+            this.SUBRULE(this.anyToken)
+          })
+        }
+      },
+      {
+        // Fallback for anything else (WITH CTEs, etc.) - capture as tokens
+        ALT: () => {
+          this.AT_LEAST_ONE(() => {
+            this.SUBRULE2(this.anyToken)
+          })
+        }
+      }
+    ])
   })
 
-  // WHERE clause
+  // Catch-all for any token (for graceful degradation)
+  private anyToken = this.RULE('anyToken', () => {
+    this.OR([
+      { ALT: () => this.CONSUME(Identifier) },
+      { ALT: () => this.CONSUME(LParen) },
+      { ALT: () => this.CONSUME(RParen) },
+      { ALT: () => this.CONSUME(Comma) },
+      { ALT: () => this.CONSUME(Dot) },
+      { ALT: () => this.CONSUME(Star) },
+      { ALT: () => this.CONSUME(StringLiteral) },
+      { ALT: () => this.CONSUME(NumberLiteral) },
+      { ALT: () => this.CONSUME(BacktickIdentifier) },
+      { ALT: () => this.CONSUME(LCurly) },
+      { ALT: () => this.CONSUME(RCurly) },
+      { ALT: () => this.CONSUME(Colon) },
+      { ALT: () => this.CONSUME(LBracket) },
+      { ALT: () => this.CONSUME(RBracket) },
+      { ALT: () => this.CONSUME(Plus) },
+      { ALT: () => this.CONSUME(Minus) },
+      { ALT: () => this.CONSUME(Arrow) },
+      { ALT: () => this.CONSUME(Slash) },
+      { ALT: () => this.CONSUME(Percent) },
+      { ALT: () => this.CONSUME(Semicolon) },
+      // Comparison operators
+      { ALT: () => this.CONSUME(Equals) },
+      { ALT: () => this.CONSUME(NotEquals) },
+      { ALT: () => this.CONSUME(NotEquals2) },
+      { ALT: () => this.CONSUME(GreaterThan) },
+      { ALT: () => this.CONSUME(LessThan) },
+      { ALT: () => this.CONSUME(GreaterThanOrEqual) },
+      { ALT: () => this.CONSUME(LessThanOrEqual) },
+      // Keywords
+      { ALT: () => this.CONSUME(Where) },
+      { ALT: () => this.CONSUME(In) },
+      { ALT: () => this.CONSUME(From) },
+      { ALT: () => this.CONSUME(GroupBy) },
+      { ALT: () => this.CONSUME(OrderBy) },
+      { ALT: () => this.CONSUME(Having) },
+      { ALT: () => this.CONSUME(Limit) },
+      { ALT: () => this.CONSUME(Offset) },
+      { ALT: () => this.CONSUME(Union) },
+      { ALT: () => this.CONSUME(All) },
+      { ALT: () => this.CONSUME(Join) },
+      { ALT: () => this.CONSUME(Left) },
+      { ALT: () => this.CONSUME(Right) },
+      { ALT: () => this.CONSUME(Inner) },
+      { ALT: () => this.CONSUME(Full) },
+      { ALT: () => this.CONSUME(Cross) },
+      { ALT: () => this.CONSUME(On) },
+      { ALT: () => this.CONSUME(Using) },
+      { ALT: () => this.CONSUME(As) },
+      { ALT: () => this.CONSUME(And) },
+      { ALT: () => this.CONSUME(Or) },
+      { ALT: () => this.CONSUME(Not) },
+      { ALT: () => this.CONSUME(Null) },
+      { ALT: () => this.CONSUME(Like) },
+      { ALT: () => this.CONSUME(Between) },
+      { ALT: () => this.CONSUME(Cast) },
+      { ALT: () => this.CONSUME(Interval) },
+      { ALT: () => this.CONSUME(PartitionBy) },
+      { ALT: () => this.CONSUME(Array) },
+      { ALT: () => this.CONSUME(If) },
+      { ALT: () => this.CONSUME(With) },
+      { ALT: () => this.CONSUME(Materialized) },
+      { ALT: () => this.CONSUME(Replace) },
+      { ALT: () => this.CONSUME(To) },
+      { ALT: () => this.CONSUME(Engine) },
+      { ALT: () => this.CONSUME(Default) },
+      { ALT: () => this.CONSUME(Nullable) },
+      { ALT: () => this.CONSUME(Alias) },
+      { ALT: () => this.CONSUME(Comment) },
+      { ALT: () => this.CONSUME(PrimaryKey) },
+      { ALT: () => this.CONSUME(Settings) },
+      { ALT: () => this.CONSUME(Exists) },
+      // Interval units
+      { ALT: () => this.CONSUME(Day) },
+      { ALT: () => this.CONSUME(Days) },
+      { ALT: () => this.CONSUME(Hour) },
+      { ALT: () => this.CONSUME(Hours) },
+      { ALT: () => this.CONSUME(Minute) },
+      { ALT: () => this.CONSUME(Minutes) },
+      { ALT: () => this.CONSUME(Second) },
+      { ALT: () => this.CONSUME(Seconds) },
+      { ALT: () => this.CONSUME(Week) },
+      { ALT: () => this.CONSUME(Weeks) },
+      { ALT: () => this.CONSUME(Month) },
+      { ALT: () => this.CONSUME(Months) },
+      { ALT: () => this.CONSUME(Year) },
+      { ALT: () => this.CONSUME(Years) },
+      // Data types
+      { ALT: () => this.CONSUME(SimpleAggregateFunction) },
+      { ALT: () => this.CONSUME(AggregateFunction) },
+      { ALT: () => this.CONSUME(DateTime64) },
+      { ALT: () => this.CONSUME(DateTime) },
+      { ALT: () => this.CONSUME(Date32) },
+      { ALT: () => this.CONSUME(Date) },
+      { ALT: () => this.CONSUME(Tuple) },
+      { ALT: () => this.CONSUME(Map) },
+      { ALT: () => this.CONSUME(Nested) },
+      { ALT: () => this.CONSUME(LowCardinality) },
+      { ALT: () => this.CONSUME(Enum8) },
+      { ALT: () => this.CONSUME(Enum16) },
+      { ALT: () => this.CONSUME(FixedString) },
+      { ALT: () => this.CONSUME(UInt64) },
+      { ALT: () => this.CONSUME(UInt32) },
+      { ALT: () => this.CONSUME(UInt16) },
+      { ALT: () => this.CONSUME(UInt8) },
+      { ALT: () => this.CONSUME(Int64) },
+      { ALT: () => this.CONSUME(Int32) },
+      { ALT: () => this.CONSUME(Int16) },
+      { ALT: () => this.CONSUME(Int8) },
+      { ALT: () => this.CONSUME(Float64) },
+      { ALT: () => this.CONSUME(Float32) },
+      { ALT: () => this.CONSUME(Decimal) },
+      { ALT: () => this.CONSUME(String) },
+      { ALT: () => this.CONSUME(UUID) },
+      { ALT: () => this.CONSUME(Bool) },
+      { ALT: () => this.CONSUME(IPv4) },
+      { ALT: () => this.CONSUME(IPv6) },
+      { ALT: () => this.CONSUME(JSONType) },
+      { ALT: () => this.CONSUME(Other) },
+    ])
+  })
+
+  // WHERE clause - currently only supports simple "col IN {param:Type}" pattern
+  // For other patterns, tokens are captured by the parent selectQuery's anyToken
   private whereClause = this.RULE('whereClause', () => {
     this.CONSUME(Where)
-    this.SUBRULE(this.expression)
+    // Only try to parse if it matches our supported pattern
+    // otherwise let it fall through to anyToken in selectQuery
+    this.OPTION(() => {
+      this.SUBRULE(this.expression)
+    })
   })
 
   // Simple expression (for now, handles: col IN {param:Type})
@@ -355,11 +506,72 @@ class ClickHouseParser extends CstParser {
     })
   })
 
-  // Parse a single column (for now, just an identifier)
+  // Parse a single column (permissive - handles simple and complex expressions)
   private selectColumn = this.RULE('selectColumn', () => {
     this.OR([
       { ALT: () => this.CONSUME(Star) },  // SELECT *
-      { ALT: () => this.CONSUME(Identifier) }  // SELECT id
+      {
+        // Column expression - capture tokens until comma/FROM/WHERE
+        ALT: () => {
+          this.AT_LEAST_ONE(() => {
+            this.SUBRULE(this.columnToken)
+          })
+        }
+      }
+    ])
+  })
+
+  // Tokens that can appear in a column expression (everything except delimiters)
+  private columnToken = this.RULE('columnToken', () => {
+    this.OR([
+      { ALT: () => this.CONSUME(Identifier) },
+      { ALT: () => this.CONSUME(LParen) },
+      { ALT: () => this.CONSUME(RParen) },
+      { ALT: () => this.CONSUME(Dot) },
+      { ALT: () => this.CONSUME(StringLiteral) },
+      { ALT: () => this.CONSUME(NumberLiteral) },
+      { ALT: () => this.CONSUME(BacktickIdentifier) },
+      { ALT: () => this.CONSUME(LCurly) },
+      { ALT: () => this.CONSUME(RCurly) },
+      { ALT: () => this.CONSUME(Colon) },
+      { ALT: () => this.CONSUME(LBracket) },
+      { ALT: () => this.CONSUME(RBracket) },
+      { ALT: () => this.CONSUME(Plus) },
+      { ALT: () => this.CONSUME(Minus) },
+      { ALT: () => this.CONSUME(Arrow) },
+      { ALT: () => this.CONSUME(Slash) },
+      { ALT: () => this.CONSUME(Percent) },
+      { ALT: () => this.CONSUME(Equals) },
+      { ALT: () => this.CONSUME(NotEquals) },
+      { ALT: () => this.CONSUME(NotEquals2) },
+      { ALT: () => this.CONSUME(GreaterThan) },
+      { ALT: () => this.CONSUME(LessThan) },
+      { ALT: () => this.CONSUME(GreaterThanOrEqual) },
+      { ALT: () => this.CONSUME(LessThanOrEqual) },
+      { ALT: () => this.CONSUME(In) },
+      { ALT: () => this.CONSUME(And) },
+      { ALT: () => this.CONSUME(Or) },
+      { ALT: () => this.CONSUME(Not) },
+      { ALT: () => this.CONSUME(Null) },
+      { ALT: () => this.CONSUME(Like) },
+      { ALT: () => this.CONSUME(Between) },
+      { ALT: () => this.CONSUME(Cast) },
+      { ALT: () => this.CONSUME(Interval) },
+      { ALT: () => this.CONSUME(Array) },
+      { ALT: () => this.CONSUME(If) },
+      { ALT: () => this.CONSUME(As) },
+      // Data types
+      { ALT: () => this.CONSUME(String) },
+      { ALT: () => this.CONSUME(Int32) },
+      { ALT: () => this.CONSUME(Int64) },
+      { ALT: () => this.CONSUME(Float32) },
+      { ALT: () => this.CONSUME(Float64) },
+      { ALT: () => this.CONSUME(Date) },
+      { ALT: () => this.CONSUME(DateTime) },
+      { ALT: () => this.CONSUME(UUID) },
+      { ALT: () => this.CONSUME(Other) },
+      // Note: Comma, From, Where, GroupBy, OrderBy, etc. are NOT included
+      // These act as delimiters that end a column expression
     ])
   })
 
@@ -972,17 +1184,23 @@ function parseCreateView(create: any): DDLView {
   // Extract the SELECT query from the selectQuery node
   const selectQueryNode = create.children.selectQuery[0]
 
-  // Build AST
+  // Try to build AST (returns undefined if parsing fell back to string mode)
   const selectAST = extractSelectStatement(selectQueryNode)
 
-  // For backward compatibility, also generate string - we can delete this later
+  // For backward compatibility, also generate string
   const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
 
-  return {
+  // Only include AST if we successfully extracted it
+  const result: DDLView = {
     name: viewName,
-    selectQuery,       // Backward compatible
-    select: selectAST  // NEW: Structured AST
+    selectQuery       // Backward compatible (always present)
   }
+
+  if (selectAST) {
+    result.select = selectAST  // NEW: Structured AST (only when available)
+  }
+
+  return result
 }
 
 function parseCreateMaterializedView(create: any): DDLMaterializedView {
@@ -1359,7 +1577,15 @@ function flattenTokens(node: any): IToken[] {
  * Input: CST node from Chevrotain parser
  * Output: SelectStatement AST
  */
-function extractSelectStatement(cst: any): SelectStatement {
+function extractSelectStatement(cst: any): SelectStatement | undefined {
+  // Check if we have structured data (selectList exists)
+  // If we fell back to anyToken catch-all (e.g., WITH CTEs), we won't have selectList
+  if (!cst.children.selectList) {
+    // Return undefined to signal that AST extraction is not available
+    // Caller should use the string representation instead
+    return undefined
+  }
+
   // The selectList contains the columns
   const selectListNode = cst.children.selectList[0]
   const columns = extractSelectList(selectListNode)
@@ -1377,7 +1603,10 @@ function extractSelectStatement(cst: any): SelectStatement {
 
   // WHERE clause is optional
   if (cst.children.whereClause) {
-    result.where = extractWhereClause(cst.children.whereClause[0])
+    const whereExpr = extractWhereClause(cst.children.whereClause[0])
+    if (whereExpr) {
+      result.where = whereExpr
+    }
   }
 
   return result
@@ -1407,22 +1636,28 @@ function extractSelectColumn(cst: any): SelectColumn {
     }
   }
 
-  // Otherwise it's an identifier (column name)
-  if (cst.children.Identifier) {
-    const columnName = cst.children.Identifier[0].image
-    return {
-      expression: {
-        type: 'COLUMN',
-        name: columnName
+  // Check for simple single identifier (our optimized case)
+  if (cst.children.columnToken) {
+    const columnTokens = cst.children.columnToken
+    if (columnTokens.length === 1 && columnTokens[0].children.Identifier) {
+      // Simple case: single identifier like "id"
+      const columnName = columnTokens[0].children.Identifier[0].image
+      return {
+        expression: {
+          type: 'COLUMN',
+          name: columnName
+        }
       }
     }
   }
 
-  // Fallback
+  // Otherwise it's a complex expression (functions, etc.)
+  // We don't have AST support for this yet, so just return placeholder
+  // The string representation in selectQuery will still work correctly
   return {
     expression: {
       type: 'COLUMN',
-      name: 'unknown'
+      name: '(complex expression)'
     }
   }
 }
@@ -1455,7 +1690,14 @@ function extractTableRef(cst: any): TableRef {
 /**
  * Extract WHERE clause
  */
-function extractWhereClause(cst: any): Expression {
+function extractWhereClause(cst: any): Expression | undefined {
+  // Check if we have structured expression (not fallback anyToken mode)
+  if (!cst.children.expression || !cst.children.expression[0]) {
+    // WHERE clause exists but we couldn't parse it structurally
+    // Return undefined so caller knows to use string representation
+    return undefined
+  }
+
   // WHERE clause contains an expression
   return extractExpressionAST(cst.children.expression[0])
 }
