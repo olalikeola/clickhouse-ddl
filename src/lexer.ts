@@ -18,7 +18,8 @@ export type TokenType =
   | 'IN' | 'LIKE' | 'IS' | 'NULL' | 'TRUE' | 'FALSE' | 'CAST'
   | 'WITH' | 'OVER' | 'ASC' | 'DESC' | 'NULLABLE' | 'DEFAULT'
   | 'ALIAS' | 'COMMENT' | 'TO' | 'ON' | 'CLUSTER' | 'PRIMARY' | 'KEY'
-  | 'ARRAY' | 'JOIN' | 'INTERVAL'
+  | 'ARRAY' | 'JOIN' | 'INTERVAL' | 'UNION' | 'ALL'
+  | 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS' | 'OUTER'
   // Literals
   | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'PARAMETER'
   // Operators & Punctuation
@@ -71,6 +72,14 @@ const KEYWORDS: Record<string, TokenType> = {
   'ARRAY': 'ARRAY',
   'JOIN': 'JOIN',
   'INTERVAL': 'INTERVAL',
+  'UNION': 'UNION',
+  'ALL': 'ALL',
+  'INNER': 'INNER',
+  'LEFT': 'LEFT',
+  'RIGHT': 'RIGHT',
+  'FULL': 'FULL',
+  'CROSS': 'CROSS',
+  'OUTER': 'OUTER',
 }
 
 export class Lexer {

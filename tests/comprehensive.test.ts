@@ -1514,28 +1514,34 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
   describe('CAST expressions - Phase 11', () => {
     it('parses CREATE VIEW with CAST to Enum', () => {
       const sql = `CREATE VIEW status_view AS
-        SELECT id, CAST('active' AS Enum('active', 'inactive', 'pending')) AS status
+        SELECT id, CAST('active', 'Enum(\\'active\\', \\'inactive\\', \\'pending\\')') AS status
         FROM users`
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CAST')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Enum')
+      expect(result.view).toBeDefined()
+      if (result.view) {
+        expect(result.view.select.columns).toHaveLength(2)
+        const castCol = result.view.select.columns[1]
+        expect(castCol.expression.type).toBe('CAST')
+      }
     })
 
     it('parses CREATE VIEW with multiple CAST expressions', () => {
       const sql = `CREATE VIEW typed_data AS
         SELECT
-          CAST(user_id AS String) AS user_str,
-          CAST(created_at AS DateTime) AS created_datetime
+          CAST(user_id, 'String') AS user_str,
+          CAST(created_at, 'DateTime') AS created_datetime
         FROM raw_data`
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view).toBeDefined()
+      if (result.view) {
+        expect(result.view.select.columns).toHaveLength(2)
+        expect(result.view.select.columns[0].expression.type).toBe('CAST')
+        expect(result.view.select.columns[1].expression.type).toBe('CAST')
+      }
     })
   })
 
@@ -1782,7 +1788,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
         SELECT
           f.user_id,
           COUNT(*) AS event_count,
-          CAST(AVG(value) AS Float64) AS avg_value
+          CAST(AVG(value), 'Float64') AS avg_value
         FROM filtered AS f
         INNER JOIN users AS u ON f.user_id = u.id
         WHERE u.role <> 'guest'

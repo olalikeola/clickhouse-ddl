@@ -31,6 +31,7 @@ export interface DDLColumn {
     columns: SelectColumn[]
     from?: FromClause
     where?: Expression
+    unions?: SelectStatement[]  // UNION ALL queries
   }
 
   export interface SelectColumn {
@@ -47,6 +48,14 @@ export interface DDLColumn {
     type: 'FROM'
     table: TableRef | SubqueryRef
     arrayJoin?: ArrayJoinClause
+    joins?: JoinClause[]
+  }
+
+  export interface JoinClause {
+    type: 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
+    outer?: boolean  // For LEFT OUTER, RIGHT OUTER, FULL OUTER
+    table: TableRef | SubqueryRef
+    on?: Expression
   }
 
   export interface TableRef {
@@ -124,7 +133,13 @@ export interface DDLColumn {
     query: SelectStatement
   }
 
-  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction | ArrayLiteral | TupleLiteral | Subquery
+  export interface CastExpression {
+    type: 'CAST'
+    expression: Expression
+    targetType: string
+  }
+
+  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction | ArrayLiteral | TupleLiteral | Subquery | CastExpression
 
   export interface DDLView {
     name: string
