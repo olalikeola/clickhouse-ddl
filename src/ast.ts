@@ -14,16 +14,23 @@ export interface DDLColumn {
     engineArgs?: string
     columns: DDLColumn[]
     orderBy?: string[]
-    partitionBy?: string
+    partitionBy?: string[]
     settings?: Record<string, string>  // Engine settings
   }
 
   // AST node types for SELECT queries
+  export interface CTEDefinition {
+    type: 'CTE'
+    name: string
+    query: SelectStatement
+  }
+
   export interface SelectStatement {
     type: 'SELECT'
+    with?: CTEDefinition[]  // NEW: WITH clause (CTEs)
     columns: SelectColumn[]
     from?: FromClause
-    where?: Expression  // NEW: WHERE clause
+    where?: Expression
   }
 
   export interface SelectColumn {
@@ -31,15 +38,33 @@ export interface DDLColumn {
     alias?: string
   }
 
+  export interface OrderByItem {
+    expression: Expression
+    direction?: 'ASC' | 'DESC'
+  }
+
   export interface FromClause {
     type: 'FROM'
-    table: TableRef
+    table: TableRef | SubqueryRef
+    arrayJoin?: ArrayJoinClause
   }
 
   export interface TableRef {
     type: 'TABLE'
     database?: string
     name: string
+    alias?: string
+  }
+
+  export interface SubqueryRef {
+    type: 'SUBQUERY_TABLE'
+    query: SelectStatement
+    alias?: string
+  }
+
+  export interface ArrayJoinClause {
+    type: 'ARRAY_JOIN'
+    array: Expression
     alias?: string
   }
 
@@ -51,7 +76,7 @@ export interface DDLColumn {
 
   export interface BinaryOp {
     type: 'BINARY_OP'
-    operator: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'IN' | 'LIKE' | 'AND' | 'OR'
+    operator: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'IN' | 'NOT IN' | 'LIKE' | 'NOT LIKE' | 'AND' | 'OR' | 'IS NULL' | 'IS NOT NULL' | '+' | '-' | '*' | '/' | '%'
     left: Expression
     right: Expression
   }
@@ -62,13 +87,48 @@ export interface DDLColumn {
     dataType?: string  // e.g., "Array(String)"
   }
 
-  export type Expression = ColumnRef | BinaryOp | ParameterRef
-  // We'll add more expression types later (Literal, FunctionCall, etc.)
+  export interface Literal {
+    type: 'LITERAL'
+    valueType: 'NUMBER' | 'STRING' | 'NULL' | 'BOOLEAN'
+    value: string | number | null | boolean
+  }
+
+  export interface FunctionCall {
+    type: 'FUNCTION_CALL'
+    name: string
+    args: Expression[]
+  }
+
+  export interface WindowFunction {
+    type: 'WINDOW_FUNCTION'
+    name: string
+    args: Expression[]
+    over: {
+      partitionBy?: Expression[]
+      orderBy?: OrderByItem[]
+    }
+  }
+
+  export interface ArrayLiteral {
+    type: 'ARRAY_LITERAL'
+    elements: Expression[]
+  }
+
+  export interface TupleLiteral {
+    type: 'TUPLE_LITERAL'
+    elements: Expression[]
+  }
+
+  export interface Subquery {
+    type: 'SUBQUERY'
+    query: SelectStatement
+  }
+
+  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction | ArrayLiteral | TupleLiteral | Subquery
 
   export interface DDLView {
     name: string
-    selectQuery: string  // Keep for backward compatibility
-    select?: SelectStatement  // NEW: Structured AST
+    select: SelectStatement  // Required: Pure AST, no string fallback
   }
 
   export interface DDLMaterializedView {

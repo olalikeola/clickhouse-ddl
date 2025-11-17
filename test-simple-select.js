@@ -1,21 +1,29 @@
-// Simple test to understand current behavior
 import { parseStatement } from './dist/esm/src/index.js'
 
-const sql = 'CREATE VIEW my_view AS SELECT id FROM users'
+console.log('Testing simple SELECT with function call...')
 
-console.log('Input SQL:')
-console.log(sql)
-console.log('\n---\n')
+const sql = `CREATE VIEW test_view AS SELECT COUNT(*) FROM users`
 
-const result = parseStatement(sql)
+try {
+  const result = parseStatement(sql)
+  console.log('\n✅ Parse successful!')
+  console.log('View name:', result.view?.name)
+  console.log('SELECT columns:', result.view?.select.columns.length)
 
-console.log('Current output:')
-console.log(JSON.stringify(result, null, 2))
-console.log('\n---\n')
-
-console.log('The selectQuery field (OLD - string):')
-console.log(result.view.selectQuery)
-console.log('\n---\n')
-
-console.log('The select field (NEW - AST):')
-console.log(JSON.stringify(result.view.select, null, 2))
+  if (result.view?.select.columns[0]) {
+    const col = result.view.select.columns[0]
+    console.log('First column expression type:', col.expression.type)
+    if (col.expression.type === 'FUNCTION_CALL') {
+      console.log('  Function name:', col.expression.name)
+      console.log('  Function args:', col.expression.args.length)
+      console.log('\n✅ SUCCESS: Function calls work!')
+    } else {
+      console.log('\n❌ FAIL: Expected FUNCTION_CALL, got:', col.expression.type)
+    }
+  }
+} catch (error) {
+  console.error('\n❌ Parse failed:', error.message)
+  if (error.token) {
+    console.error('At token:', error.token)
+  }
+}
