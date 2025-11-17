@@ -119,7 +119,21 @@ import {
   SimpleAggregateFunction,
   ClickHouseLexer,
 } from './tokens.js'
-import { DDLTable, DDLColumn, DDLStatement, DDLView, DDLMaterializedView } from './ast.js'
+import {
+  DDLTable,
+  DDLColumn,
+  DDLStatement,
+  DDLView,
+  DDLMaterializedView,
+  SelectStatement,
+  SelectColumn,
+  FromClause,
+  TableRef,
+  ColumnRef,
+  Expression,
+  BinaryOp,
+  ParameterRef
+} from './ast.js'
 
 class ClickHouseParser extends CstParser {
   constructor() {
@@ -292,116 +306,72 @@ class ClickHouseParser extends CstParser {
     })
   })
 
+  // NEW: Proper SELECT statement parser
   private selectQuery = this.RULE('selectQuery', () => {
-    // For now, consume all remaining tokens as the SELECT query
-    // We'll parse this properly in a future iteration
-    this.MANY(() => {
-      this.OR([
-        { ALT: () => this.CONSUME(Identifier) },
-        { ALT: () => this.CONSUME(BacktickIdentifier) },
-        { ALT: () => this.CONSUME(StringLiteral) },
-        { ALT: () => this.CONSUME(NumberLiteral) },
-        { ALT: () => this.CONSUME(LParen) },
-        { ALT: () => this.CONSUME(RParen) },
-        { ALT: () => this.CONSUME(LBracket) },
-        { ALT: () => this.CONSUME(RBracket) },
-        { ALT: () => this.CONSUME(Comma) },
-        { ALT: () => this.CONSUME(Dot) },
-        { ALT: () => this.CONSUME(Colon) },
-        { ALT: () => this.CONSUME(LCurly) },
-        { ALT: () => this.CONSUME(RCurly) },
-        { ALT: () => this.CONSUME(As) },
-        { ALT: () => this.CONSUME(Equals) },
-        { ALT: () => this.CONSUME(NotEquals) },
-        { ALT: () => this.CONSUME(GreaterThan) },
-        { ALT: () => this.CONSUME(LessThan) },
-        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
-        { ALT: () => this.CONSUME(LessThanOrEqual) },
-        { ALT: () => this.CONSUME(Plus) },
-        { ALT: () => this.CONSUME(Minus) },
-        { ALT: () => this.CONSUME(Star) },
-        { ALT: () => this.CONSUME(Slash) },
-        // SQL keywords that can appear in SELECT queries (window functions, CTEs, null checks, logical operators, etc.)
-        { ALT: () => this.CONSUME(PartitionBy) },
-        { ALT: () => this.CONSUME(OrderBy) },
-        { ALT: () => this.CONSUME(Null) },
-        { ALT: () => this.CONSUME(Not) },
-        { ALT: () => this.CONSUME(In) },
-        { ALT: () => this.CONSUME(And) },
-        { ALT: () => this.CONSUME(Or) },
-        { ALT: () => this.CONSUME(Like) },
-        { ALT: () => this.CONSUME(Between) },
-        { ALT: () => this.CONSUME(Union) },
-        { ALT: () => this.CONSUME(All) },
-        { ALT: () => this.CONSUME(Cast) },
-        { ALT: () => this.CONSUME(With) },
-        { ALT: () => this.CONSUME(Join) },
-        { ALT: () => this.CONSUME(Inner) },
-        { ALT: () => this.CONSUME(Left) },
-        { ALT: () => this.CONSUME(Right) },
-        { ALT: () => this.CONSUME(Full) },
-        { ALT: () => this.CONSUME(Cross) },
-        { ALT: () => this.CONSUME(On) },
-        { ALT: () => this.CONSUME(Using) },
-        { ALT: () => this.CONSUME(Interval) },
-        { ALT: () => this.CONSUME(Day) },
-        { ALT: () => this.CONSUME(Days) },
-        { ALT: () => this.CONSUME(Hour) },
-        { ALT: () => this.CONSUME(Hours) },
-        { ALT: () => this.CONSUME(Minute) },
-        { ALT: () => this.CONSUME(Minutes) },
-        { ALT: () => this.CONSUME(Second) },
-        { ALT: () => this.CONSUME(Seconds) },
-        { ALT: () => this.CONSUME(Week) },
-        { ALT: () => this.CONSUME(Weeks) },
-        { ALT: () => this.CONSUME(Month) },
-        { ALT: () => this.CONSUME(Months) },
-        { ALT: () => this.CONSUME(Year) },
-        { ALT: () => this.CONSUME(Years) },
-        { ALT: () => this.CONSUME(Select) },
-        { ALT: () => this.CONSUME(From) },
-        { ALT: () => this.CONSUME(Where) },
-        { ALT: () => this.CONSUME(GroupBy) },
-        { ALT: () => this.CONSUME(Having) },
-        { ALT: () => this.CONSUME(Limit) },
-        { ALT: () => this.CONSUME(Offset) },
-        { ALT: () => this.CONSUME(Arrow) },
-        { ALT: () => this.CONSUME(NotEquals2) },
-        // Add data type tokens that might appear in SELECT queries (CAST, parameterized queries, etc.)
-        { ALT: () => this.CONSUME(String) },
-        { ALT: () => this.CONSUME(UInt8) },
-        { ALT: () => this.CONSUME(UInt16) },
-        { ALT: () => this.CONSUME(UInt32) },
-        { ALT: () => this.CONSUME(UInt64) },
-        { ALT: () => this.CONSUME(Int8) },
-        { ALT: () => this.CONSUME(Int16) },
-        { ALT: () => this.CONSUME(Int32) },
-        { ALT: () => this.CONSUME(Int64) },
-        { ALT: () => this.CONSUME(Float32) },
-        { ALT: () => this.CONSUME(Float64) },
-        { ALT: () => this.CONSUME(Decimal) },
-        { ALT: () => this.CONSUME(Date) },
-        { ALT: () => this.CONSUME(Date32) },
-        { ALT: () => this.CONSUME(DateTime) },
-        { ALT: () => this.CONSUME(DateTime64) },
-        { ALT: () => this.CONSUME(UUID) },
-        { ALT: () => this.CONSUME(Bool) },
-        { ALT: () => this.CONSUME(IPv4) },
-        { ALT: () => this.CONSUME(IPv6) },
-        { ALT: () => this.CONSUME(JSONType) },
-        { ALT: () => this.CONSUME(Array) },
-        { ALT: () => this.CONSUME(Tuple) },
-        { ALT: () => this.CONSUME(Map) },
-        { ALT: () => this.CONSUME(Nested) },
-        { ALT: () => this.CONSUME(LowCardinality) },
-        { ALT: () => this.CONSUME(Nullable) },
-        { ALT: () => this.CONSUME(Enum8) },
-        { ALT: () => this.CONSUME(Enum16) },
-        { ALT: () => this.CONSUME(FixedString) },
-        { ALT: () => this.CONSUME(AggregateFunction) },
-        { ALT: () => this.CONSUME(SimpleAggregateFunction) },
-      ])
+    this.CONSUME(Select)
+    this.SUBRULE(this.selectList)
+    this.OPTION(() => {
+      this.SUBRULE(this.fromClause)
     })
+    this.OPTION2(() => {
+      this.SUBRULE(this.whereClause)
+    })
+  })
+
+  // WHERE clause
+  private whereClause = this.RULE('whereClause', () => {
+    this.CONSUME(Where)
+    this.SUBRULE(this.expression)
+  })
+
+  // Simple expression (for now, handles: col IN {param:Type})
+  private expression = this.RULE('expression', () => {
+    // Left side: column name
+    this.CONSUME(Identifier)
+    // Operator
+    this.CONSUME(In)
+    // Right side: parameter or literal
+    this.SUBRULE(this.parameter)
+  })
+
+  // Parameter syntax: {param:Type}
+  private parameter = this.RULE('parameter', () => {
+    this.OPTION(() => this.CONSUME(LParen))  // Optional (
+    this.CONSUME(LCurly)
+    this.CONSUME(Identifier)  // param name
+    this.CONSUME(Colon)
+    this.SUBRULE(this.type)  // Array(String)
+    this.CONSUME(RCurly)
+    this.OPTION2(() => this.CONSUME(RParen))  // Optional )
+  })
+
+  // Parse the list of columns: id, name, email
+  private selectList = this.RULE('selectList', () => {
+    this.AT_LEAST_ONE_SEP({
+      SEP: Comma,
+      DEF: () => {
+        this.SUBRULE(this.selectColumn)
+      }
+    })
+  })
+
+  // Parse a single column (for now, just an identifier)
+  private selectColumn = this.RULE('selectColumn', () => {
+    this.OR([
+      { ALT: () => this.CONSUME(Star) },  // SELECT *
+      { ALT: () => this.CONSUME(Identifier) }  // SELECT id
+    ])
+  })
+
+  // Parse FROM clause
+  private fromClause = this.RULE('fromClause', () => {
+    this.CONSUME(From)
+    this.SUBRULE(this.tableRef)
+  })
+
+  // Parse table reference
+  private tableRef = this.RULE('tableRef', () => {
+    this.CONSUME(Identifier)  // table name
   })
 
   private qualifiedTableName = this.RULE('qualifiedTableName', () => {
@@ -1001,9 +971,18 @@ function parseCreateView(create: any): DDLView {
 
   // Extract the SELECT query from the selectQuery node
   const selectQueryNode = create.children.selectQuery[0]
+
+  // Build AST
+  const selectAST = extractSelectStatement(selectQueryNode)
+
+  // For backward compatibility, also generate string - we can delete this later
   const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
 
-  return { name: viewName, selectQuery }
+  return {
+    name: viewName,
+    selectQuery,       // Backward compatible
+    select: selectAST  // NEW: Structured AST
+  }
 }
 
 function parseCreateMaterializedView(create: any): DDLMaterializedView {
@@ -1369,4 +1348,166 @@ function flattenTokens(node: any): IToken[] {
     }
   }
   return out
+}
+
+// ========================================
+// AST Extraction Functions
+// ========================================
+
+/**
+ * Extract a SELECT statement into an AST
+ * Input: CST node from Chevrotain parser
+ * Output: SelectStatement AST
+ */
+function extractSelectStatement(cst: any): SelectStatement {
+  // The selectList contains the columns
+  const selectListNode = cst.children.selectList[0]
+  const columns = extractSelectList(selectListNode)
+
+  // Build the AST
+  const result: SelectStatement = {
+    type: 'SELECT',
+    columns
+  }
+
+  // FROM clause is optional
+  if (cst.children.fromClause) {
+    result.from = extractFromClause(cst.children.fromClause[0])
+  }
+
+  // WHERE clause is optional
+  if (cst.children.whereClause) {
+    result.where = extractWhereClause(cst.children.whereClause[0])
+  }
+
+  return result
+}
+
+/**
+ * Extract the list of columns being selected
+ */
+function extractSelectList(cst: any): SelectColumn[] {
+  // selectColumn is an array of column nodes
+  const columnNodes = cst.children.selectColumn
+
+  return columnNodes.map((colNode: any) => extractSelectColumn(colNode))
+}
+
+/**
+ * Extract a single column
+ */
+function extractSelectColumn(cst: any): SelectColumn {
+  // Check if it's SELECT *
+  if (cst.children.Star) {
+    return {
+      expression: {
+        type: 'COLUMN',
+        name: '*'
+      }
+    }
+  }
+
+  // Otherwise it's an identifier (column name)
+  if (cst.children.Identifier) {
+    const columnName = cst.children.Identifier[0].image
+    return {
+      expression: {
+        type: 'COLUMN',
+        name: columnName
+      }
+    }
+  }
+
+  // Fallback
+  return {
+    expression: {
+      type: 'COLUMN',
+      name: 'unknown'
+    }
+  }
+}
+
+/**
+ * Extract FROM clause
+ */
+function extractFromClause(cst: any): FromClause {
+  const tableRef = extractTableRef(cst.children.tableRef[0])
+
+  return {
+    type: 'FROM',
+    table: tableRef
+  }
+}
+
+/**
+ * Extract table reference
+ */
+function extractTableRef(cst: any): TableRef {
+  // For now, just get the table name (single identifier)
+  const tableName = cst.children.Identifier[0].image
+
+  return {
+    type: 'TABLE',
+    name: tableName
+  }
+}
+
+/**
+ * Extract WHERE clause
+ */
+function extractWhereClause(cst: any): Expression {
+  // WHERE clause contains an expression
+  return extractExpressionAST(cst.children.expression[0])
+}
+
+/**
+ * Extract expression as AST (handles: col IN {param:Type})
+ */
+function extractExpressionAST(cst: any): Expression {
+  // Left side: column name
+  const columnName = cst.children.Identifier[0].image
+
+  // Right side: parameter
+  const parameterNode = cst.children.parameter[0]
+  const parameter = extractParameter(parameterNode)
+
+  // Build binary operator
+  const binaryOp: BinaryOp = {
+    type: 'BINARY_OP',
+    operator: 'IN',
+    left: {
+      type: 'COLUMN',
+      name: columnName
+    },
+    right: parameter
+  }
+
+  return binaryOp
+}
+
+/**
+ * Extract parameter: {param:Type}
+ */
+function extractParameter(cst: any): ParameterRef {
+  // Get parameter name
+  const paramName = cst.children.Identifier[0].image
+
+  // Get data type (it's the type node)
+  const typeNode = cst.children.type[0]
+  const dataTypeString = extractTypeAsString(typeNode)
+
+  return {
+    type: 'PARAMETER',
+    name: paramName,
+    dataType: dataTypeString
+  }
+}
+
+/**
+ * Extract type as a string (e.g., "Array(String)")
+ */
+function extractTypeAsString(typeNode: any): string {
+  // Just flatten all tokens in the type and join them
+  const tokens = flattenTokens(typeNode)
+  return tokens.map(t => t.image).join('')
 }
