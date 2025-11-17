@@ -19,16 +19,28 @@ export interface DDLColumn {
   }
 
   // AST node types for SELECT queries
+  export interface CTEDefinition {
+    type: 'CTE'
+    name: string
+    query: SelectStatement
+  }
+
   export interface SelectStatement {
     type: 'SELECT'
+    with?: CTEDefinition[]  // NEW: WITH clause (CTEs)
     columns: SelectColumn[]
     from?: FromClause
-    where?: Expression  // NEW: WHERE clause
+    where?: Expression
   }
 
   export interface SelectColumn {
     expression: Expression
     alias?: string
+  }
+
+  export interface OrderByItem {
+    expression: Expression
+    direction?: 'ASC' | 'DESC'
   }
 
   export interface FromClause {
@@ -62,13 +74,33 @@ export interface DDLColumn {
     dataType?: string  // e.g., "Array(String)"
   }
 
-  export type Expression = ColumnRef | BinaryOp | ParameterRef
-  // We'll add more expression types later (Literal, FunctionCall, etc.)
+  export interface Literal {
+    type: 'LITERAL'
+    valueType: 'NUMBER' | 'STRING' | 'NULL' | 'BOOLEAN'
+    value: string | number | null | boolean
+  }
+
+  export interface FunctionCall {
+    type: 'FUNCTION_CALL'
+    name: string
+    args: Expression[]
+  }
+
+  export interface WindowFunction {
+    type: 'WINDOW_FUNCTION'
+    name: string
+    args: Expression[]
+    over: {
+      partitionBy?: Expression[]
+      orderBy?: OrderByItem[]
+    }
+  }
+
+  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction
 
   export interface DDLView {
     name: string
-    selectQuery: string  // Keep for backward compatibility
-    select?: SelectStatement  // NEW: Structured AST
+    select: SelectStatement  // Required: Pure AST, no string fallback
   }
 
   export interface DDLMaterializedView {

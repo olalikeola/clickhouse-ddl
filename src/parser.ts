@@ -32,6 +32,7 @@ import {
   PrimaryKey,
   OrderBy,
   PartitionBy,
+  Over,
   Settings,
   In,
   And,
@@ -66,6 +67,8 @@ import {
   Months,
   Year,
   Years,
+  Asc,
+  Desc,
   Select,
   From,
   Where,
@@ -129,12 +132,17 @@ import {
   DDLMaterializedView,
   SelectStatement,
   SelectColumn,
+  OrderByItem,
   FromClause,
   TableRef,
   ColumnRef,
   Expression,
   BinaryOp,
-  ParameterRef
+  ParameterRef,
+  FunctionCall,
+  WindowFunction,
+  Literal,
+  CTEDefinition
 } from './ast.js'
 
 class ClickHouseParser extends CstParser {
@@ -308,15 +316,29 @@ class ClickHouseParser extends CstParser {
     })
   })
 
+  // Basic SELECT statement without token catchall (for use inside CTEs)
+  private basicSelectStatement = this.RULE('basicSelectStatement', () => {
+    this.CONSUME(Select)
+    this.SUBRULE(this.selectList)
+    this.OPTION(() => {
+      this.SUBRULE(this.fromClause)
+    })
+    this.OPTION2(() => {
+      this.SUBRULE(this.whereClause)
+    })
+    // NO anyToken catchall here - we want to stop at the closing paren
+  })
+
   // NEW: Query parser - gracefully handles SELECT queries and falls back for complex ones
   private selectQuery = this.RULE('selectQuery', () => {
     this.OR([
       {
-        // Structured SELECT parsing for simple queries
-        GATE: () => this.LA(1).tokenType.name === 'Select',
+        // WITH ... SELECT pattern (CTE)
+        GATE: () => this.LA(1).tokenType.name === 'With',
         ALT: () => {
+          this.SUBRULE(this.withClause)
           this.CONSUME(Select)
-          this.SUBRULE(this.selectList)
+          this.SUBRULE2(this.selectList)
           this.OPTION(() => {
             this.SUBRULE(this.fromClause)
           })
@@ -330,10 +352,28 @@ class ClickHouseParser extends CstParser {
         }
       },
       {
-        // Fallback for anything else (WITH CTEs, etc.) - capture as tokens
+        // Structured SELECT parsing for simple queries (no WITH)
+        GATE: () => this.LA(1).tokenType.name === 'Select',
+        ALT: () => {
+          this.CONSUME2(Select)
+          this.SUBRULE3(this.selectList)
+          this.OPTION3(() => {
+            this.SUBRULE2(this.fromClause)
+          })
+          this.OPTION4(() => {
+            this.SUBRULE2(this.whereClause)
+          })
+          // Capture any remaining tokens (GROUP BY, ORDER BY, UNION, etc.)
+          this.MANY2(() => {
+            this.SUBRULE2(this.anyToken)
+          })
+        }
+      },
+      {
+        // Fallback for anything else - capture as tokens
         ALT: () => {
           this.AT_LEAST_ONE(() => {
-            this.SUBRULE2(this.anyToken)
+            this.SUBRULE3(this.anyToken)
           })
         }
       }
@@ -464,25 +504,97 @@ class ClickHouseParser extends CstParser {
     ])
   })
 
-  // WHERE clause - currently only supports simple "col IN {param:Type}" pattern
-  // For other patterns, tokens are captured by the parent selectQuery's anyToken
+  // WHERE clause
   private whereClause = this.RULE('whereClause', () => {
     this.CONSUME(Where)
-    // Only try to parse if it matches our supported pattern
-    // otherwise let it fall through to anyToken in selectQuery
-    this.OPTION(() => {
-      this.SUBRULE(this.expression)
+    this.SUBRULE(this.orExpression)
+  })
+
+  // WITH clause (CTEs - Common Table Expressions)
+  private withClause = this.RULE('withClause', () => {
+    this.CONSUME(With)
+    this.AT_LEAST_ONE_SEP({
+      SEP: Comma,
+      DEF: () => this.SUBRULE(this.cteDefinition)
     })
   })
 
-  // Simple expression (for now, handles: col IN {param:Type})
+  // CTE definition: name AS (SELECT ...)
+  private cteDefinition = this.RULE('cteDefinition', () => {
+    this.CONSUME(Identifier)  // CTE name
+    this.CONSUME(As)
+    this.CONSUME(LParen)
+    this.SUBRULE(this.basicSelectStatement)  // Use basic SELECT (no token catchall)
+    this.CONSUME(RParen)
+  })
+
+  // Level 1: OR (lowest precedence)
+  private orExpression = this.RULE('orExpression', () => {
+    this.SUBRULE(this.andExpression)
+    this.MANY(() => {
+      this.CONSUME(Or)
+      this.SUBRULE2(this.andExpression)
+    })
+  })
+
+  // Level 2: AND
+  private andExpression = this.RULE('andExpression', () => {
+    this.SUBRULE(this.comparisonExpression)
+    this.MANY(() => {
+      this.CONSUME(And)
+      this.SUBRULE2(this.comparisonExpression)
+    })
+  })
+
+  // Level 3: Comparison (=, !=, <, >, <=, >=, IN)
+  private comparisonExpression = this.RULE('comparisonExpression', () => {
+    this.SUBRULE(this.primaryValue)
+    this.OPTION(() => {
+      this.OR([
+        { ALT: () => this.CONSUME(Equals) },
+        { ALT: () => this.CONSUME(NotEquals) },
+        { ALT: () => this.CONSUME(LessThan) },
+        { ALT: () => this.CONSUME(GreaterThan) },
+        { ALT: () => this.CONSUME(LessThanOrEqual) },
+        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
+        { ALT: () => this.CONSUME(In) },
+      ])
+      this.SUBRULE2(this.primaryValue)
+    })
+  })
+
+  // Level 4: Primary values (literals, columns, parentheses, parameters)
+  private primaryValue = this.RULE('primaryValue', () => {
+    this.OR([
+      { ALT: () => this.CONSUME(StringLiteral) },
+      { ALT: () => this.CONSUME(NumberLiteral) },
+      { ALT: () => this.CONSUME(Null) },
+      {
+        // Parameter: {param:Type} or ({param:Type})
+        GATE: () => {
+          const la1 = this.LA(1)
+          const la2 = this.LA(2)
+          // Match {param or ({param
+          return la1.tokenType.name === 'LCurly' ||
+                 (la1.tokenType.name === 'LParen' && la2.tokenType.name === 'LCurly')
+        },
+        ALT: () => this.SUBRULE(this.parameter)
+      },
+      {
+        // Parenthesized expression (not a parameter)
+        ALT: () => {
+          this.CONSUME(LParen)
+          this.SUBRULE(this.orExpression)
+          this.CONSUME(RParen)
+        }
+      },
+      { ALT: () => this.SUBRULE(this.simpleColumn) },
+    ])
+  })
+
+  // Keep old expression rule for backward compatibility (just delegates to orExpression)
   private expression = this.RULE('expression', () => {
-    // Left side: column name
-    this.CONSUME(Identifier)
-    // Operator
-    this.CONSUME(In)
-    // Right side: parameter or literal
-    this.SUBRULE(this.parameter)
+    this.SUBRULE(this.orExpression)
   })
 
   // Parameter syntax: {param:Type}
@@ -511,22 +623,108 @@ class ClickHouseParser extends CstParser {
     this.OR([
       { ALT: () => this.CONSUME(Star) },  // SELECT *
       {
-        // Column expression - capture tokens until comma/FROM/WHERE
-        ALT: () => {
-          this.AT_LEAST_ONE(() => {
-            this.SUBRULE(this.columnToken)
-          })
-        }
-      }
+        // Function call or window function: identifier followed by (
+        GATE: () => {
+          const la1 = this.LA(1)
+          const la2 = this.LA(2)
+          return la1.tokenType.name === 'Identifier' && la2.tokenType.name === 'LParen'
+        },
+        ALT: () => this.SUBRULE(this.functionCallOrWindow)
+      },
+      { ALT: () => this.SUBRULE(this.orExpression) }   // Any other expression
     ])
+    // Optional alias: [AS] alias_name
+    this.OPTION(() => {
+      this.OPTION2(() => this.CONSUME(As))  // AS keyword is optional
+      this.CONSUME(Identifier)  // alias name
+    })
+  })
+
+  // Function call or window function: funcName(...) [OVER (...)]
+  private functionCallOrWindow = this.RULE('functionCallOrWindow', () => {
+    this.SUBRULE(this.functionCall)
+    // Optional OVER clause makes it a window function
+    this.OPTION(() => {
+      this.CONSUME(Over)
+      this.CONSUME(LParen)
+      // Optional PARTITION BY clause
+      this.OPTION2(() => {
+        this.CONSUME(PartitionBy)
+        this.SUBRULE(this.orExpression)
+        this.MANY(() => {
+          this.CONSUME(Comma)
+          this.SUBRULE2(this.orExpression)
+        })
+      })
+      // Optional ORDER BY clause
+      this.OPTION3(() => {
+        this.CONSUME(OrderBy)
+        this.SUBRULE(this.orderByItem)
+        this.MANY2(() => {
+          this.CONSUME2(Comma)
+          this.SUBRULE2(this.orderByItem)
+        })
+      })
+      this.CONSUME(RParen)
+    })
+  })
+
+  // Simple column reference: identifier or qualified identifier
+  private simpleColumn = this.RULE('simpleColumn', () => {
+    this.CONSUME(Identifier)
+    this.OPTION(() => {
+      this.CONSUME(Dot)
+      this.CONSUME2(Identifier)
+    })
+  })
+
+  // Function call: funcName(arg1, arg2, ...)
+  private functionCall = this.RULE('functionCall', () => {
+    this.CONSUME(Identifier)  // Function name
+    this.CONSUME(LParen)
+    // Optional arguments
+    this.OPTION(() => {
+      this.OR([
+        // Special case: COUNT(*), SUM(*), etc.
+        { ALT: () => this.CONSUME(Star) },
+        // Regular arguments: comma-separated column expressions
+        {
+          ALT: () => {
+            // First argument
+            this.AT_LEAST_ONE(() => {
+              this.SUBRULE(this.columnToken)
+            })
+            // Additional arguments
+            this.MANY(() => {
+              this.CONSUME(Comma)
+              this.AT_LEAST_ONE2(() => {
+                this.SUBRULE2(this.columnToken)
+              })
+            })
+          }
+        }
+      ])
+    })
+    this.CONSUME(RParen)
+  })
+
+  // Window function: functionCall OVER (PARTITION BY ... ORDER BY ...)
+  // Order by item: expression [ASC|DESC]
+  private orderByItem = this.RULE('orderByItem', () => {
+    this.SUBRULE(this.orExpression)  // The expression to order by
+    this.OPTION(() => {
+      this.OR([
+        { ALT: () => this.CONSUME(Asc) },
+        { ALT: () => this.CONSUME(Desc) }
+      ])
+    })
   })
 
   // Tokens that can appear in a column expression (everything except delimiters)
+  // NOTE: Removed Identifier and LParen to avoid ambiguity with functionCall
+  // NOTE: Removed RParen - it should be consumed explicitly by rules that need it (like functionCall)
   private columnToken = this.RULE('columnToken', () => {
     this.OR([
-      { ALT: () => this.CONSUME(Identifier) },
-      { ALT: () => this.CONSUME(LParen) },
-      { ALT: () => this.CONSUME(RParen) },
       { ALT: () => this.CONSUME(Dot) },
       { ALT: () => this.CONSUME(StringLiteral) },
       { ALT: () => this.CONSUME(NumberLiteral) },
@@ -1187,20 +1385,15 @@ function parseCreateView(create: any): DDLView {
   // Try to build AST (returns undefined if parsing fell back to string mode)
   const selectAST = extractSelectStatement(selectQueryNode)
 
-  // For backward compatibility, also generate string
-  const selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
+  // Build AST - fail hard if extraction fails (no string fallback)
+  if (!selectAST) {
+    throw new Error(`Failed to extract SELECT AST for view: ${viewName}`)
+  }
 
-  // Only include AST if we successfully extracted it
-  const result: DDLView = {
+  return {
     name: viewName,
-    selectQuery       // Backward compatible (always present)
+    select: selectAST  // Pure AST, required field
   }
-
-  if (selectAST) {
-    result.select = selectAST  // NEW: Structured AST (only when available)
-  }
-
-  return result
 }
 
 function parseCreateMaterializedView(create: any): DDLMaterializedView {
@@ -1573,6 +1766,85 @@ function flattenTokens(node: any): IToken[] {
 // ========================================
 
 /**
+ * Extract WITH clause (CTEs)
+ */
+function extractWithClause(cst: any): CTEDefinition[] {
+  const ctes: CTEDefinition[] = []
+
+  if (!cst.children.cteDefinition) {
+    return ctes
+  }
+
+  for (const cteNode of cst.children.cteDefinition) {
+    const cteDef = extractCteDefinition(cteNode)
+    if (cteDef) {
+      ctes.push(cteDef)
+    }
+  }
+
+  return ctes
+}
+
+/**
+ * Extract a single CTE definition
+ */
+function extractCteDefinition(cst: any): CTEDefinition | undefined {
+  const name = cst.children.Identifier[0].image
+
+  // The basicSelectStatement is inside the parentheses
+  if (!cst.children.basicSelectStatement || !cst.children.basicSelectStatement[0]) {
+    return undefined
+  }
+
+  // Extract from basicSelectStatement node
+  const selectNode = cst.children.basicSelectStatement[0]
+  const query = extractBasicSelectStatement(selectNode)
+  if (!query) {
+    return undefined
+  }
+
+  return {
+    type: 'CTE',
+    name,
+    query
+  }
+}
+
+/**
+ * Extract a basic SELECT statement (used inside CTEs)
+ */
+function extractBasicSelectStatement(cst: any): SelectStatement | undefined {
+  // The selectList contains the columns
+  if (!cst.children.selectList) {
+    return undefined
+  }
+
+  const selectListNode = cst.children.selectList[0]
+  const columns = extractSelectList(selectListNode)
+
+  // Build the AST
+  const result: SelectStatement = {
+    type: 'SELECT',
+    columns
+  }
+
+  // FROM clause is optional
+  if (cst.children.fromClause) {
+    result.from = extractFromClause(cst.children.fromClause[0])
+  }
+
+  // WHERE clause is optional
+  if (cst.children.whereClause) {
+    const whereExpr = extractWhereClause(cst.children.whereClause[0])
+    if (whereExpr) {
+      result.where = whereExpr
+    }
+  }
+
+  return result
+}
+
+/**
  * Extract a SELECT statement into an AST
  * Input: CST node from Chevrotain parser
  * Output: SelectStatement AST
@@ -1594,6 +1866,14 @@ function extractSelectStatement(cst: any): SelectStatement | undefined {
   const result: SelectStatement = {
     type: 'SELECT',
     columns
+  }
+
+  // WITH clause is optional (CTEs)
+  if (cst.children.withClause) {
+    const ctes = extractWithClause(cst.children.withClause[0])
+    if (ctes.length > 0) {
+      result.with = ctes
+    }
   }
 
   // FROM clause is optional
@@ -1626,38 +1906,158 @@ function extractSelectList(cst: any): SelectColumn[] {
  * Extract a single column
  */
 function extractSelectColumn(cst: any): SelectColumn {
+  // Extract alias if present (last Identifier in the selectColumn CST)
+  let alias: string | undefined
+  if (cst.children.Identifier && cst.children.Identifier.length > 0) {
+    // The last Identifier in selectColumn is the alias (if alias was present)
+    const lastIdentifier = cst.children.Identifier[cst.children.Identifier.length - 1]
+    alias = lastIdentifier.image
+  }
+
   // Check if it's SELECT *
   if (cst.children.Star) {
     return {
       expression: {
         type: 'COLUMN',
         name: '*'
-      }
+      },
+      alias
     }
   }
 
-  // Check for simple single identifier (our optimized case)
-  if (cst.children.columnToken) {
-    const columnTokens = cst.children.columnToken
-    if (columnTokens.length === 1 && columnTokens[0].children.Identifier) {
-      // Simple case: single identifier like "id"
-      const columnName = columnTokens[0].children.Identifier[0].image
-      return {
-        expression: {
-          type: 'COLUMN',
-          name: columnName
-        }
-      }
+  // Check if it's a function call or window function
+  if (cst.children.functionCallOrWindow) {
+    return {
+      expression: extractFunctionCallOrWindow(cst.children.functionCallOrWindow[0]),
+      alias
     }
   }
 
-  // Otherwise it's a complex expression (functions, etc.)
-  // We don't have AST support for this yet, so just return placeholder
-  // The string representation in selectQuery will still work correctly
+  // Check for general expression (literals, CAST, columns, etc.)
+  if (cst.children.orExpression) {
+    return {
+      expression: extractOrExpression(cst.children.orExpression[0]),
+      alias
+    }
+  }
+
+  // Fallback for complex expressions
   return {
     expression: {
       type: 'COLUMN',
       name: '(complex expression)'
+    }
+  }
+}
+
+/**
+ * Extract function call AST
+ */
+function extractFunctionCall(cst: any): FunctionCall {
+  const name = cst.children.Identifier[0].image
+  const args: Expression[] = []
+
+  // Handle COUNT(*), SUM(*), etc.
+  if (cst.children.Star) {
+    args.push({
+      type: 'COLUMN',
+      name: '*'
+    })
+  }
+  // Handle function with column/expression arguments
+  else if (cst.children.columnToken) {
+    // For now, we'll extract each argument group as a simple expression
+    // Split by Comma tokens to separate arguments
+    const allTokens = cst.children.columnToken
+    let currentArg: any[] = []
+
+    for (const token of allTokens) {
+      if (token.children.Comma) {
+        // End of current argument, start new one
+        if (currentArg.length > 0) {
+          // For now, just extract first identifier if simple
+          const firstToken = currentArg[0]
+          if (firstToken.children.Identifier) {
+            args.push({
+              type: 'COLUMN',
+              name: firstToken.children.Identifier[0].image
+            })
+          }
+          currentArg = []
+        }
+      } else {
+        currentArg.push(token)
+      }
+    }
+
+    // Don't forget the last argument
+    if (currentArg.length > 0) {
+      const firstToken = currentArg[0]
+      if (firstToken.children.Identifier) {
+        args.push({
+          type: 'COLUMN',
+          name: firstToken.children.Identifier[0].image
+        })
+      }
+    }
+  }
+
+  return {
+    type: 'FUNCTION_CALL',
+    name,
+    args
+  }
+}
+
+/**
+ * Extract function call or window function
+ */
+function extractFunctionCallOrWindow(cst: any): FunctionCall | WindowFunction {
+  // Extract the underlying function call
+  const funcCall = extractFunctionCall(cst.children.functionCall[0])
+
+  // Check if there's an OVER clause (making it a window function)
+  if (!cst.children.Over) {
+    // No OVER clause, just return the function call
+    return funcCall
+  }
+
+  // It's a window function
+  // Extract PARTITION BY expressions
+  const partitionBy: Expression[] = []
+  if (cst.children.orExpression) {
+    for (const expr of cst.children.orExpression) {
+      partitionBy.push(extractOrExpression(expr))
+    }
+  }
+
+  // Extract ORDER BY items
+  const orderBy: OrderByItem[] = []
+  if (cst.children.orderByItem) {
+    for (const item of cst.children.orderByItem) {
+      const expression = extractOrExpression(item.children.orExpression[0])
+      let direction: 'ASC' | 'DESC' | undefined
+
+      if (item.children.Asc) {
+        direction = 'ASC'
+      } else if (item.children.Desc) {
+        direction = 'DESC'
+      }
+
+      orderBy.push({
+        expression,
+        direction
+      })
+    }
+  }
+
+  return {
+    type: 'WINDOW_FUNCTION',
+    name: funcCall.name,
+    args: funcCall.args,
+    over: {
+      partitionBy: partitionBy.length > 0 ? partitionBy : undefined,
+      orderBy: orderBy.length > 0 ? orderBy : undefined
     }
   }
 }
@@ -1691,40 +2091,153 @@ function extractTableRef(cst: any): TableRef {
  * Extract WHERE clause
  */
 function extractWhereClause(cst: any): Expression | undefined {
-  // Check if we have structured expression (not fallback anyToken mode)
-  if (!cst.children.expression || !cst.children.expression[0]) {
-    // WHERE clause exists but we couldn't parse it structurally
-    // Return undefined so caller knows to use string representation
+  if (!cst.children.orExpression || !cst.children.orExpression[0]) {
     return undefined
   }
-
-  // WHERE clause contains an expression
-  return extractExpressionAST(cst.children.expression[0])
+  return extractOrExpression(cst.children.orExpression[0])
 }
 
 /**
- * Extract expression as AST (handles: col IN {param:Type})
+ * Extract OR expression
  */
-function extractExpressionAST(cst: any): Expression {
-  // Left side: column name
-  const columnName = cst.children.Identifier[0].image
-
-  // Right side: parameter
-  const parameterNode = cst.children.parameter[0]
-  const parameter = extractParameter(parameterNode)
-
-  // Build binary operator
-  const binaryOp: BinaryOp = {
-    type: 'BINARY_OP',
-    operator: 'IN',
-    left: {
-      type: 'COLUMN',
-      name: columnName
-    },
-    right: parameter
+function extractOrExpression(cst: any): Expression {
+  const andExpressions = cst.children.andExpression
+  if (andExpressions.length === 1) {
+    // No OR, just return the AND expression
+    return extractAndExpression(andExpressions[0])
   }
 
-  return binaryOp
+  // Multiple AND expressions joined by OR
+  let result: Expression = extractAndExpression(andExpressions[0])
+  for (let i = 1; i < andExpressions.length; i++) {
+    result = {
+      type: 'BINARY_OP',
+      operator: 'OR',
+      left: result,
+      right: extractAndExpression(andExpressions[i])
+    }
+  }
+  return result
+}
+
+/**
+ * Extract AND expression
+ */
+function extractAndExpression(cst: any): Expression {
+  const comparisonExpressions = cst.children.comparisonExpression
+  if (comparisonExpressions.length === 1) {
+    // No AND, just return the comparison
+    return extractComparisonExpression(comparisonExpressions[0])
+  }
+
+  // Multiple comparisons joined by AND
+  let result: Expression = extractComparisonExpression(comparisonExpressions[0])
+  for (let i = 1; i < comparisonExpressions.length; i++) {
+    result = {
+      type: 'BINARY_OP',
+      operator: 'AND',
+      left: result,
+      right: extractComparisonExpression(comparisonExpressions[i])
+    }
+  }
+  return result
+}
+
+/**
+ * Extract comparison expression (=, !=, <, >, etc.)
+ */
+function extractComparisonExpression(cst: any): Expression {
+  const primaryValues = cst.children.primaryValue
+  if (primaryValues.length === 1) {
+    // No comparison, just a primary value
+    return extractPrimaryValue(primaryValues[0])
+  }
+
+  // Binary comparison
+  const left = extractPrimaryValue(primaryValues[0])
+  const right = extractPrimaryValue(primaryValues[1])
+
+  let operator: BinaryOp['operator'] = '='
+  if (cst.children.Equals) operator = '='
+  else if (cst.children.NotEquals) operator = '!='
+  else if (cst.children.LessThan) operator = '<'
+  else if (cst.children.GreaterThan) operator = '>'
+  else if (cst.children.LessThanOrEqual) operator = '<='
+  else if (cst.children.GreaterThanOrEqual) operator = '>='
+  else if (cst.children.In) operator = 'IN'
+
+  return {
+    type: 'BINARY_OP',
+    operator,
+    left,
+    right
+  }
+}
+
+/**
+ * Extract primary value (literal, column, parameter, parenthesized expression)
+ */
+function extractPrimaryValue(cst: any): Expression {
+  // String literal
+  if (cst.children.StringLiteral) {
+    const value = cst.children.StringLiteral[0].image
+    // Remove quotes
+    const unquoted = value.slice(1, -1)
+    return {
+      type: 'LITERAL',
+      valueType: 'STRING',
+      value: unquoted
+    }
+  }
+
+  // Number literal
+  if (cst.children.NumberLiteral) {
+    return {
+      type: 'LITERAL',
+      valueType: 'NUMBER',
+      value: parseFloat(cst.children.NumberLiteral[0].image)
+    }
+  }
+
+  // NULL
+  if (cst.children.Null) {
+    return {
+      type: 'LITERAL',
+      valueType: 'NULL',
+      value: null
+    }
+  }
+
+  // Parameter: {param:Type}
+  if (cst.children.parameter) {
+    return extractParameter(cst.children.parameter[0])
+  }
+
+  // Parenthesized expression
+  if (cst.children.LParen && cst.children.orExpression) {
+    return extractOrExpression(cst.children.orExpression[0])
+  }
+
+  // Simple column
+  if (cst.children.simpleColumn) {
+    const simpleCol = cst.children.simpleColumn[0]
+    const identifiers = simpleCol.children.Identifier
+
+    if (identifiers.length === 1) {
+      return {
+        type: 'COLUMN',
+        name: identifiers[0].image
+      }
+    } else {
+      return {
+        type: 'COLUMN',
+        table: identifiers[0].image,
+        name: identifiers[1].image
+      }
+    }
+  }
+
+  throw new Error('Unknown primary value type')
 }
 
 /**

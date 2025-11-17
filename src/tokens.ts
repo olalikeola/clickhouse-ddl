@@ -20,6 +20,7 @@ export const Comment = createToken({ name: 'Comment', pattern: /COMMENT(?![a-zA-
 export const PrimaryKey = createToken({ name: 'PrimaryKey', pattern: /PRIMARY\s+KEY(?![a-zA-Z0-9_])/i })
 export const OrderBy = createToken({ name: 'OrderBy', pattern: /ORDER\s+BY(?![a-zA-Z0-9_])/i })
 export const PartitionBy = createToken({ name: 'PartitionBy', pattern: /PARTITION\s+BY(?![a-zA-Z0-9_])/i })
+export const Over = createToken({ name: 'Over', pattern: /OVER(?![a-zA-Z0-9_])/i })
 export const Settings = createToken({ name: 'Settings', pattern: /SETTINGS(?![a-zA-Z0-9_])/i })
 
 // SQL operators and keywords for WHERE clauses, JOIN conditions, etc.
@@ -56,6 +57,8 @@ export const Month = createToken({ name: 'Month', pattern: /MONTH(?![a-zA-Z0-9_]
 export const Months = createToken({ name: 'Months', pattern: /MONTHS(?![a-zA-Z0-9_])/i })
 export const Year = createToken({ name: 'Year', pattern: /YEAR(?![a-zA-Z0-9_])/i })
 export const Years = createToken({ name: 'Years', pattern: /YEARS(?![a-zA-Z0-9_])/i })
+export const Asc = createToken({ name: 'Asc', pattern: /ASC(?![a-zA-Z0-9_])/i })
+export const Desc = createToken({ name: 'Desc', pattern: /DESC(?![a-zA-Z0-9_])/i })
 export const Select = createToken({ name: 'Select', pattern: /SELECT(?![a-zA-Z0-9_])/i })
 export const From = createToken({ name: 'From', pattern: /FROM(?![a-zA-Z0-9_])/i })
 export const Where = createToken({ name: 'Where', pattern: /WHERE(?![a-zA-Z0-9_])/i })
@@ -157,6 +160,7 @@ export const allTokens = [
   PrimaryKey,
   OrderBy,
   PartitionBy,
+  Over,
   Settings,
   In,
   And,
@@ -192,6 +196,8 @@ export const allTokens = [
   Month,
   Years,
   Year,
+  Asc,
+  Desc,
   Select,
   From,
   Where,

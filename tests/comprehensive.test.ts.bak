@@ -863,18 +863,12 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.view?.select.columns).toHaveLength(2)
 
       // First column: id
-      const col1 = result.view?.select.columns[0].expression
-      expect(col1?.type).toBe('COLUMN')
-      if (col1 && col1.type === 'COLUMN') {
-        expect(col1.name).toBe('id')
-      }
+      expect(result.view?.select.columns[0].expression.type).toBe('COLUMN')
+      expect(result.view?.select.columns[0].expression.name).toBe('id')
 
       // Second column: name
-      const col2 = result.view?.select.columns[1].expression
-      expect(col2?.type).toBe('COLUMN')
-      if (col2 && col2.type === 'COLUMN') {
-        expect(col2.name).toBe('name')
-      }
+      expect(result.view?.select.columns[1].expression.type).toBe('COLUMN')
+      expect(result.view?.select.columns[1].expression.name).toBe('name')
 
       // FROM clause
       expect(result.view?.select.from).toBeDefined()
@@ -887,8 +881,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('test_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('SELECT')
     })
 
     it('parses CREATE VIEW with schema-qualified name', () => {
@@ -897,8 +890,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.user_summary')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('SELECT')
     })
 
     it('parses CREATE VIEW with complex SELECT query', () => {
@@ -907,14 +899,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('user_stats')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('COUNT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WHERE')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('GROUP')
+      expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('COUNT')
+      expect(result.view?.selectQuery).toContain('WHERE')
+      expect(result.view?.selectQuery).toContain('GROUP')
     })
 
     // TODO: Phase 2 - Complex SQL features not yet supported in AST
@@ -939,14 +927,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.latest_events_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('PARTITION BY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ORDER BY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('OVER')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('rank')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('ORDER BY')
+      expect(result.view?.selectQuery).toContain('OVER')
+      expect(result.view?.selectQuery).toContain('rank')
     })
 
     it('parses CREATE VIEW with multiple window functions', () => {
@@ -959,12 +943,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('PARTITION BY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('rank')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('row_number')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('rank')
+      expect(result.view?.selectQuery).toContain('row_number')
     })
 
     it('parses CREATE VIEW with if() function in WHERE clause', () => {
@@ -977,12 +958,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.filtered_events_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('length')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('selected_ids')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('length')
+      expect(result.view?.selectQuery).toContain('selected_ids')
     })
 
     it('parses CREATE VIEW with parameterized query syntax', () => {
@@ -995,14 +973,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ids')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Array')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('status')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('start_date')
+      expect(result.view?.selectQuery).toContain('ids')
+      expect(result.view?.selectQuery).toContain('Array')
+      expect(result.view?.selectQuery).toContain('status')
+      expect(result.view?.selectQuery).toContain('start_date')
     })
 
     // TODO: Phase 2 - Complex expressions not yet supported
@@ -1015,12 +989,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('tier_name')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LowCardinality')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('plan')
+      expect(result.view?.selectQuery).toContain('tier_name')
+      expect(result.view?.selectQuery).toContain('LowCardinality')
+      expect(result.view?.selectQuery).toContain('plan')
     })
 
     it.skip('parses CREATE VIEW with Nullable in parameterized queries', () => {
@@ -1032,12 +1003,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('email')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Nullable')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('min_age')
+      expect(result.view?.selectQuery).toContain('email')
+      expect(result.view?.selectQuery).toContain('Nullable')
+      expect(result.view?.selectQuery).toContain('min_age')
     })
 
     it('parses CREATE VIEW with complex nested types in parameterized queries', () => {
@@ -1050,14 +1018,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Array')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Nullable')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Map')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LowCardinality')
+      expect(result.view?.selectQuery).toContain('Array')
+      expect(result.view?.selectQuery).toContain('Nullable')
+      expect(result.view?.selectQuery).toContain('Map')
+      expect(result.view?.selectQuery).toContain('LowCardinality')
     })
 
     // TODO: Phase 2 - Complex function calls not yet supported
@@ -1076,14 +1040,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.merged_data_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NULL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('generateUUIDv4')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('generateUUIDv4')
     })
 
     it.skip('parses CREATE VIEW with IS NULL in WHERE clause', () => {
@@ -1095,14 +1055,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NULL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('email')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('phone')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('email')
+      expect(result.view?.selectQuery).toContain('phone')
     })
 
     it('parses CREATE VIEW with IS NULL in CASE expressions', () => {
@@ -1118,14 +1074,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NULL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CASE')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WHEN')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('CASE')
+      expect(result.view?.selectQuery).toContain('WHEN')
     })
 
     // TODO: Phase 2 - Complex function calls not yet supported
@@ -1151,14 +1103,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.latest_records_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('PARTITION BY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('rank')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('filter_ids')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('PARTITION BY')
+      expect(result.view?.selectQuery).toContain('rank')
+      expect(result.view?.selectQuery).toContain('filter_ids')
     })
 
     it('backwards compatibility: parse() still works for CREATE TABLE', () => {
@@ -1332,14 +1280,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.filtered_alerts_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NOT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('column1')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('column1')
+      expect(result.view?.selectQuery).toContain('SELECT')
     })
 
     it.skip('parses CREATE VIEW with IS NOT NULL', () => {
@@ -1351,14 +1295,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NOT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NULL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('AND')
+      expect(result.view?.selectQuery).toContain('IS')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('NULL')
+      expect(result.view?.selectQuery).toContain('AND')
     })
 
     it.skip('parses CREATE VIEW with NOT LIKE', () => {
@@ -1370,12 +1310,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NOT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LIKE')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('test')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('LIKE')
+      expect(result.view?.selectQuery).toContain('test')
     })
 
     it.skip('parses CREATE VIEW with NOT BETWEEN', () => {
@@ -1386,12 +1323,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NOT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('BETWEEN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('AND')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('BETWEEN')
+      expect(result.view?.selectQuery).toContain('AND')
     })
 
     // TODO: Phase 2 - IN with list expressions not yet supported
@@ -1403,10 +1337,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('admin')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('admin')
     })
 
     it('parses CREATE VIEW with AND/OR logical operators', () => {
@@ -1418,10 +1350,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('AND')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('OR')
+      expect(result.view?.selectQuery).toContain('AND')
+      expect(result.view?.selectQuery).toContain('OR')
     })
   })
 
@@ -1432,8 +1362,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('test_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('SELECT')
     })
 
     it('parses CREATE OR REPLACE VIEW with IF NOT EXISTS', () => {
@@ -1444,8 +1373,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.summary_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('SELECT')
+      expect(result.view?.selectQuery).toContain('SELECT')
     })
 
     it('parses CREATE OR REPLACE VIEW with schema qualification', () => {
@@ -1457,8 +1385,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('mydb.report_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('COUNT')
+      expect(result.view?.selectQuery).toContain('COUNT')
     })
   })
 
@@ -1472,10 +1399,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('combined_users')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('UNION')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ALL')
+      expect(result.view?.selectQuery).toContain('UNION')
+      expect(result.view?.selectQuery).toContain('ALL')
     })
 
     // TODO: Phase 2 - UNION not yet supported
@@ -1487,8 +1412,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('UNION')
+      expect(result.view?.selectQuery).toContain('UNION')
     })
 
     it.skip('parses CREATE VIEW with multiple UNION ALL', () => {
@@ -1501,10 +1425,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('UNION')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ALL')
+      expect(result.view?.selectQuery).toContain('UNION')
+      expect(result.view?.selectQuery).toContain('ALL')
     })
   })
 
@@ -1516,10 +1438,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CAST')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('Enum')
+      expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view?.selectQuery).toContain('Enum')
     })
 
     it('parses CREATE VIEW with multiple CAST expressions', () => {
@@ -1531,8 +1451,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view?.selectQuery).toContain('CAST')
     })
   })
 
@@ -1546,10 +1465,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('arrayMap')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('toUInt64')
+      expect(result.view?.selectQuery).toContain('arrayMap')
+      expect(result.view?.selectQuery).toContain('toUInt64')
     })
 
     it('parses CREATE VIEW with complex lambda', () => {
@@ -1559,8 +1476,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('arrayFilter')
+      expect(result.view?.selectQuery).toContain('arrayFilter')
     })
   })
 
@@ -1573,10 +1489,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INTERVAL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('DAYS')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('DAYS')
     })
 
     it('parses CREATE VIEW with multiple INTERVAL units', () => {
@@ -1589,14 +1503,10 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INTERVAL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('HOUR')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('MINUTES')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WEEK')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('HOUR')
+      expect(result.view?.selectQuery).toContain('MINUTES')
+      expect(result.view?.selectQuery).toContain('WEEK')
     })
   })
 
@@ -1608,10 +1518,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ARRAY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('ARRAY')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
 
     it.skip('parses CREATE VIEW with parameterized ARRAY JOIN', () => {
@@ -1621,10 +1529,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ARRAY')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('ARRAY')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
   })
 
@@ -1638,10 +1544,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WITH')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('active_users')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('active_users')
     })
 
     it.skip('parses CREATE VIEW with multiple CTEs', () => {
@@ -1653,12 +1557,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WITH')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('cte1')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('cte2')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('cte1')
+      expect(result.view?.selectQuery).toContain('cte2')
     })
   })
 
@@ -1671,12 +1572,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INNER')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('ON')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('ON')
     })
 
     it('parses CREATE VIEW with LEFT JOIN', () => {
@@ -1687,10 +1585,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LEFT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('LEFT')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
 
     it('parses CREATE VIEW with multiple JOIN conditions', () => {
@@ -1702,12 +1598,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INNER')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LEFT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('LEFT')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
 
     it('parses CREATE VIEW with RIGHT JOIN', () => {
@@ -1716,10 +1609,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('RIGHT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('RIGHT')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
 
     it('parses CREATE VIEW with CROSS JOIN', () => {
@@ -1728,10 +1619,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CROSS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('CROSS')
+      expect(result.view?.selectQuery).toContain('JOIN')
     })
   })
 
@@ -1744,10 +1633,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('status')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('deleted')
+      expect(result.view?.selectQuery).toContain('status')
+      expect(result.view?.selectQuery).toContain('deleted')
     })
 
     it.skip('parses CREATE VIEW with both != and <> operators', () => {
@@ -1758,10 +1645,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('col1')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('col2')
+      expect(result.view?.selectQuery).toContain('col1')
+      expect(result.view?.selectQuery).toContain('col2')
     })
   })
 
@@ -1791,28 +1676,17 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('analytics.comprehensive_view')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('WITH')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('NOT')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('IN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INTERVAL')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('DAYS')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('CAST')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('INNER')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('JOIN')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('GROUP')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('HAVING')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('LIMIT')
+      expect(result.view?.selectQuery).toContain('WITH')
+      expect(result.view?.selectQuery).toContain('NOT')
+      expect(result.view?.selectQuery).toContain('IN')
+      expect(result.view?.selectQuery).toContain('INTERVAL')
+      expect(result.view?.selectQuery).toContain('DAYS')
+      expect(result.view?.selectQuery).toContain('CAST')
+      expect(result.view?.selectQuery).toContain('INNER')
+      expect(result.view?.selectQuery).toContain('JOIN')
+      expect(result.view?.selectQuery).toContain('GROUP')
+      expect(result.view?.selectQuery).toContain('HAVING')
+      expect(result.view?.selectQuery).toContain('LIMIT')
     })
   })
 
@@ -1828,10 +1702,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('escaped_quotes')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('string')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('escaped')
+      expect(result.view?.selectQuery).toContain('string')
+      expect(result.view?.selectQuery).toContain('escaped')
     })
 
     it('parses CREATE VIEW with doubled single quotes', () => {
@@ -1845,8 +1717,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
       expect(result.view?.name).toBe('doubled_quotes')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('doubled')
+      expect(result.view?.selectQuery).toContain('doubled')
     })
 
     it('parses CREATE VIEW with escaped quotes in if() default values', () => {
@@ -1859,10 +1730,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('enterprise')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('enterprise')
+      expect(result.view?.selectQuery).toContain('if')
     })
 
     it('parses CREATE VIEW with backslash-escaped double quotes', () => {
@@ -1874,8 +1743,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('string')
+      expect(result.view?.selectQuery).toContain('string')
     })
 
     it('parses CREATE VIEW with mixed escape styles', () => {
@@ -1889,10 +1757,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('single')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('double')
+      expect(result.view?.selectQuery).toContain('single')
+      expect(result.view?.selectQuery).toContain('double')
     })
 
     it.skip('parses CREATE VIEW with complex tupleElement defaults including escaped quotes', () => {
@@ -1907,12 +1773,9 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('tupleElement')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('isNull')
+      expect(result.view?.selectQuery).toContain('tupleElement')
+      expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('isNull')
     })
 
     it('parses CREATE VIEW with empty string literals', () => {
@@ -1924,8 +1787,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
-      // TODO: Update to AST assertions
-      // expect(result.view?.selectQuery).toContain('if')
+      expect(result.view?.selectQuery).toContain('if')
     })
   })
 
