@@ -784,8 +784,26 @@ export class Parser {
     this.expect('CAST')
     this.expect('LPAREN')
     const expression = this.parseOrExpression()
-    this.expect('COMMA')
-    const targetType = this.parseType()
+
+    // Support both syntaxes:
+    // ClickHouse native: CAST(value, 'Type')
+    // SQL standard: CAST(value AS Type)
+    let targetType: string
+    if (this.check('COMMA')) {
+      // ClickHouse comma syntax
+      this.advance() // consume COMMA
+      targetType = this.parseType()
+    } else if (this.check('AS')) {
+      // SQL standard AS syntax
+      this.advance() // consume AS
+      targetType = this.parseType()
+    } else {
+      throw new ParseError(
+        `Expected COMMA or AS in CAST expression but got ${this.current().type}`,
+        this.current()
+      )
+    }
+
     this.expect('RPAREN')
 
     return {
@@ -1153,10 +1171,23 @@ export class Parser {
         prevToken = token
         if (depth === 0) break
       } else {
-        // Add space only between consecutive identifiers (like "key String" in Nested types)
-        if (prevToken && prevToken.type === 'IDENTIFIER' && token.type === 'IDENTIFIER') {
-          result += ' '
+        // Add space before token in certain cases for consistent formatting
+        if (prevToken) {
+          // Space between consecutive identifiers (like "key String" in Nested types)
+          if (prevToken.type === 'IDENTIFIER' && token.type === 'IDENTIFIER') {
+            result += ' '
+          }
+          // Space around = operator (for Enum8 etc)
+          else if (token.type === 'EQ' || prevToken.type === 'EQ') {
+            result += ' '
+          }
+          // Space after comma ONLY if followed by a string (for Enum8 definitions like 'added' = 0, 'removed' = 1)
+          // This preserves compact format for types like Map(String,String) while adding spaces in Enum8('added' = 0, 'removed' = 1)
+          else if (prevToken.type === 'COMMA' && token.type === 'STRING') {
+            result += ' '
+          }
         }
+
         // Preserve quotes around string literals
         if (token.type === 'STRING') {
           result += `'${token.value}'`

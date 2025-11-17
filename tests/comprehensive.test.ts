@@ -94,7 +94,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
 
       const result = parse(sql)
       expect(result.columns[0].type).toBe('LowCardinality(String)')
-      expect(result.columns[1].type).toBe('LowCardinality(Enum8(\'active\'=1,\'inactive\'=0))')
+      expect(result.columns[1].type).toBe('LowCardinality(Enum8(\'active\' = 1, \'inactive\' = 0))')
     })
 
     it('parses Enum types', () => {
@@ -104,8 +104,8 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       ) ENGINE = MergeTree()`
 
       const result = parse(sql)
-      expect(result.columns[0].type).toBe('Enum8(\'active\'=1,\'inactive\'=0)')
-      expect(result.columns[1].type).toBe('Enum16(\'low\'=1,\'medium\'=2,\'high\'=3)')
+      expect(result.columns[0].type).toBe('Enum8(\'active\' = 1, \'inactive\' = 0)')
+      expect(result.columns[1].type).toBe('Enum16(\'low\' = 1, \'medium\' = 2, \'high\' = 3)')
     })
   })
 
@@ -531,7 +531,7 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
       expect(result.columns[1].type).toBe('Tuple(Float64,Float64)')
       expect(result.columns[2].type).toBe('Map(String,String)')
       expect(result.columns[3].type).toBe('Array(String)')
-      expect(result.columns[4].type).toBe('LowCardinality(Enum8(\'active\'=1,\'inactive\'=0))')
+      expect(result.columns[4].type).toBe('LowCardinality(Enum8(\'active\' = 1, \'inactive\' = 0))')
     })
   })
 
@@ -1533,6 +1533,41 @@ describe('ClickHouse DDL Parser - Comprehensive Tests', () => {
           CAST(user_id, 'String') AS user_str,
           CAST(created_at, 'DateTime') AS created_datetime
         FROM raw_data`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view).toBeDefined()
+      if (result.view) {
+        expect(result.view.select.columns).toHaveLength(2)
+        expect(result.view.select.columns[0].expression.type).toBe('CAST')
+        expect(result.view.select.columns[1].expression.type).toBe('CAST')
+      }
+    })
+
+    it('parses CAST with SQL standard AS syntax', () => {
+      const sql = `CREATE VIEW status_view AS
+        SELECT CAST('prevented' AS Enum8('added' = 0, 'removed' = 1, 'prevented' = 5)) AS diff_result_type
+        FROM alerts`
+
+      const result = parseStatement(sql)
+      expect(result.type).toBe('CREATE_VIEW')
+      expect(result.view).toBeDefined()
+      if (result.view) {
+        expect(result.view.select.columns).toHaveLength(1)
+        const castCol = result.view.select.columns[0]
+        expect(castCol.expression.type).toBe('CAST')
+        if (castCol.expression.type === 'CAST') {
+          expect(castCol.expression.targetType).toContain('Enum8')
+        }
+      }
+    })
+
+    it('parses CAST with both syntaxes in same query', () => {
+      const sql = `CREATE VIEW mixed_cast AS
+        SELECT
+          CAST(col1, 'String') AS comma_syntax,
+          CAST(col2 AS Int32) AS as_syntax
+        FROM data`
 
       const result = parseStatement(sql)
       expect(result.type).toBe('CREATE_VIEW')
