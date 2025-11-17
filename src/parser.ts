@@ -6,9 +6,9 @@
 import { Lexer, Token, TokenType } from './lexer.js'
 import type {
   DDLStatement, DDLTable, DDLColumn, DDLView, DDLMaterializedView,
-  SelectStatement, SelectColumn, Expression, FromClause, TableRef, SubqueryRef, ArrayJoinClause,
+  SelectStatement, SelectColumn, Expression, FromClause, TableRef, SubqueryRef, ArrayJoinClause, JoinClause,
   ColumnRef, BinaryOp, Literal, FunctionCall, WindowFunction,
-  OrderByItem, CTEDefinition, ParameterRef, ArrayLiteral, TupleLiteral, Subquery
+  OrderByItem, CTEDefinition, ParameterRef, ArrayLiteral, TupleLiteral, Subquery, CastExpression
 } from './ast.js'
 
 class ParseError extends Error {
@@ -383,12 +383,23 @@ export class Parser {
       where = this.parseWhereClause()
     }
 
+    // Check for UNION ALL (or just UNION)
+    const unions: SelectStatement[] = []
+    while (this.check('UNION')) {
+      this.advance() // consume UNION
+      this.match('ALL') // optional ALL keyword
+
+      // Parse the next SELECT (which may have its own WITH clause)
+      unions.push(this.parseSelect())
+    }
+
     return {
       type: 'SELECT',
       with: with_,
       columns,
       from,
-      where
+      where,
+      unions: unions.length > 0 ? unions : undefined
     }
   }
 
@@ -728,7 +739,8 @@ export class Parser {
     if (this.check('PARAMETER')) {
       const param = this.current().value
       this.advance()
-      const match = param.match(/^\{([^:]+):(.+)\}$/)
+      // Use [\s\S] instead of . to match newlines
+      const match = param.match(/^\{([^:]+):([\s\S]+)\}$/)
       if (match) {
         return {
           type: 'PARAMETER',
@@ -768,18 +780,18 @@ export class Parser {
     }
   }
 
-  private parseCast(): FunctionCall {
+  private parseCast(): CastExpression {
     this.expect('CAST')
     this.expect('LPAREN')
-    const expr = this.parseOrExpression()
-    this.expect('AS')
+    const expression = this.parseOrExpression()
+    this.expect('COMMA')
     const targetType = this.parseType()
     this.expect('RPAREN')
 
     return {
-      type: 'FUNCTION_CALL',
-      name: 'CAST',
-      args: [expr, { type: 'LITERAL', valueType: 'STRING', value: targetType }]
+      type: 'CAST',
+      expression,
+      targetType
     }
   }
 
@@ -947,7 +959,35 @@ export class Parser {
       }
     }
 
-    return { type: 'FROM', table, arrayJoin }
+    // Check for JOINs (INNER, LEFT, RIGHT, FULL, CROSS)
+    const joins: JoinClause[] = []
+    while (this.check('INNER') || this.check('LEFT') || this.check('RIGHT') || this.check('FULL') || this.check('CROSS')) {
+      const joinType = this.current().type as 'INNER' | 'LEFT' | 'RIGHT' | 'FULL' | 'CROSS'
+      this.advance() // consume join type
+
+      // Optional OUTER keyword
+      const outer = this.match('OUTER')
+
+      this.expect('JOIN')
+
+      const joinTable = this.parseTableRef()
+
+      // ON clause (optional for CROSS JOIN)
+      let on: Expression | undefined
+      if (this.check('ON')) {
+        this.advance()
+        on = this.parseOrExpression()
+      }
+
+      joins.push({
+        type: joinType,
+        outer,
+        table: joinTable,
+        on
+      })
+    }
+
+    return { type: 'FROM', table, arrayJoin, joins: joins.length > 0 ? joins : undefined }
   }
 
   private parseTableRef(): TableRef | SubqueryRef {
@@ -1262,7 +1302,7 @@ export class Parser {
   }
 
   private isReservedKeyword(word: string): boolean {
-    const reserved = ['FROM', 'WHERE', 'AND', 'OR', 'IN', 'LIKE', 'AS', 'ORDER', 'BY', 'PARTITION', 'OVER', 'WITH']
+    const reserved = ['FROM', 'WHERE', 'AND', 'OR', 'IN', 'LIKE', 'AS', 'ORDER', 'BY', 'PARTITION', 'OVER', 'WITH', 'UNION', 'ALL', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'JOIN', 'ON']
     return reserved.includes(word.toUpperCase())
   }
 
