@@ -1,2268 +1,1346 @@
-import { CstParser, IToken } from 'chevrotain'
-import {
-  Create,
-  Table,
-  View,
-  To,
-  As,
-  If,
-  Not,
-  Exists,
-  LParen,
-  RParen,
-  LBracket,
-  RBracket,
-  Comma,
-  Dot,
-  Colon,
-  LCurly,
-  RCurly,
-  Identifier,
-  BacktickIdentifier,
-  Engine,
-  Equals,
-  StringLiteral,
-  NumberLiteral,
-  Default,
-  Null,
-  Nullable,
-  Materialized,
-  Alias,
-  Comment,
-  PrimaryKey,
-  OrderBy,
-  PartitionBy,
-  Over,
-  Settings,
-  In,
-  And,
-  Or,
-  Like,
-  Between,
-  Replace,
-  Union,
-  All,
-  Cast,
-  With,
-  Join,
-  Inner,
-  Left,
-  Right,
-  Full,
-  Cross,
-  On,
-  Using,
-  Interval,
-  Day,
-  Days,
-  Hour,
-  Hours,
-  Minute,
-  Minutes,
-  Second,
-  Seconds,
-  Week,
-  Weeks,
-  Month,
-  Months,
-  Year,
-  Years,
-  Asc,
-  Desc,
-  Select,
-  From,
-  Where,
-  GroupBy,
-  Having,
-  Limit,
-  Offset,
-  Arrow,
-  NotEquals,
-  NotEquals2,
-  GreaterThanOrEqual,
-  LessThanOrEqual,
-  GreaterThan,
-  LessThan,
-  Plus,
-  Minus,
-  Star,
-  Slash,
-  Percent,
-  Semicolon,
-  Other,
-  // Data type tokens
-  UInt8,
-  UInt16,
-  UInt32,
-  UInt64,
-  Int8,
-  Int16,
-  Int32,
-  Int64,
-  Float32,
-  Float64,
-  Decimal,
-  String,
-  Date,
-  Date32,
-  DateTime,
-  DateTime64,
-  UUID,
-  Bool,
-  IPv4,
-  IPv6,
-  JSONType,
-  Array,
-  Tuple,
-  Map,
-  Nested,
-  LowCardinality,
-  Enum8,
-  Enum16,
-  FixedString,
-  AggregateFunction,
-  SimpleAggregateFunction,
-  ClickHouseLexer,
-} from './tokens.js'
-import {
-  DDLTable,
-  DDLColumn,
-  DDLStatement,
-  DDLView,
-  DDLMaterializedView,
-  SelectStatement,
-  SelectColumn,
-  OrderByItem,
-  FromClause,
-  TableRef,
-  ColumnRef,
-  Expression,
-  BinaryOp,
-  ParameterRef,
-  FunctionCall,
-  WindowFunction,
-  Literal,
-  CTEDefinition
+/**
+ * Simple recursive descent parser for ClickHouse DDL
+ * No Chevrotain, just straightforward parsing
+ */
+
+import { Lexer, Token, TokenType } from './lexer.js'
+import type {
+  DDLStatement, DDLTable, DDLColumn, DDLView, DDLMaterializedView,
+  SelectStatement, SelectColumn, Expression, FromClause, TableRef, SubqueryRef, ArrayJoinClause,
+  ColumnRef, BinaryOp, Literal, FunctionCall, WindowFunction,
+  OrderByItem, CTEDefinition, ParameterRef, ArrayLiteral, TupleLiteral, Subquery
 } from './ast.js'
 
-class ClickHouseParser extends CstParser {
-  constructor() {
-    super(
-      [
-        Create,
-        Table,
-        View,
-        To,
-        As,
-        If,
-        Not,
-        Exists,
-        LParen,
-        RParen,
-        LBracket,
-        RBracket,
-        Comma,
-        Dot,
-        Colon,
-        LCurly,
-        RCurly,
-        Identifier,
-        BacktickIdentifier,
-        Engine,
-        Equals,
-        StringLiteral,
-        NumberLiteral,
-        Default,
-        Null,
-        Nullable,
-        Materialized,
-        Alias,
-        Comment,
-        OrderBy,
-        PartitionBy,
-        Settings,
-        NotEquals,
-        GreaterThanOrEqual,
-        LessThanOrEqual,
-        GreaterThan,
-        LessThan,
-        Plus,
-        Minus,
-        Star,
-        Slash,
-        // Data types
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        Float32,
-        Float64,
-        Decimal,
-        String,
-        Date,
-        Date32,
-        DateTime,
-        DateTime64,
-        UUID,
-        Bool,
-        IPv4,
-        IPv6,
-        JSONType,
-        Array,
-        Tuple,
-        Map,
-        Nested,
-        LowCardinality,
-        Enum8,
-        Enum16,
-        FixedString,
-        AggregateFunction,
-        SimpleAggregateFunction,
-      ],
-      { recoveryEnabled: true, maxLookahead: 5 },
-    )
-    this.performSelfAnalysis()
+class ParseError extends Error {
+  constructor(message: string, public token?: Token) {
+    super(message)
+    this.name = 'ParseError'
+  }
+}
+
+export class Parser {
+  private tokens: Token[]
+  private pos = 0
+
+  constructor(tokens: Token[]) {
+    this.tokens = tokens
   }
 
-  public root = this.RULE('root', () => {
-    this.OR([
-      { ALT: () => this.SUBRULE(this.createTable) },
-      { ALT: () => this.SUBRULE(this.createMaterializedView) },
-      { ALT: () => this.SUBRULE(this.createView) }
-    ])
-  })
+  parse(): DDLStatement {
+    this.expect('CREATE')
 
-  private createTable = this.RULE('createTable', () => {
-    this.CONSUME(Create)
-    this.CONSUME(Table)
-    this.OPTION(() => {
-      this.CONSUME(If)
-      this.CONSUME(Not)
-      this.CONSUME(Exists)
-    })
-    this.SUBRULE(this.qualifiedTableName) // table name (qualified or unqualified)
+    // OR REPLACE
+    if (this.check('OR_KW')) {
+      this.advance()
+      this.expect('REPLACE')
+    }
 
-    this.CONSUME(LParen) // table start paren
-    this.SUBRULE(this.columns)
-    this.CONSUME(RParen) // table end paren
+    if (this.check('TABLE')) {
+      return this.parseCreateTable()
+    } else if (this.check('MATERIALIZED')) {
+      return this.parseCreateMaterializedView()
+    } else if (this.check('VIEW')) {
+      return this.parseCreateView()
+    }
 
-    this.OPTION2(() => {
-      this.SUBRULE(this.engineClause)
-    })
+    throw new ParseError(`Expected TABLE, VIEW, or MATERIALIZED after CREATE`, this.current())
+  }
 
-    this.OPTION3(() => {
-      this.SUBRULE(this.primaryKeyClause)
-    })
+  // ========== CREATE TABLE ==========
 
-    this.OPTION4(() => {
-      this.SUBRULE(this.partitionByClause)
-    })
+  private parseCreateTable(): DDLStatement {
+    this.expect('TABLE')
 
-    this.OPTION5(() => {
-      this.SUBRULE(this.orderByClause)
-    })
+    // IF NOT EXISTS
+    if (this.check('IF')) {
+      this.advance()
+      this.expect('NOT')
+      this.expect('EXISTS')
+    }
 
-    this.OPTION6(() => {
-      this.SUBRULE(this.settingsClause)
-    })
-  })
+    let name = this.expectIdentifierOrKeyword()
 
-  private createView = this.RULE('createView', () => {
-    this.CONSUME(Create)
-    this.OPTION(() => {
-      this.CONSUME(Or)
-      this.CONSUME(Replace)
-    })
-    this.CONSUME(View)
-    this.OPTION2(() => {
-      this.CONSUME(If)
-      this.CONSUME(Not)
-      this.CONSUME(Exists)
-    })
-    this.SUBRULE(this.qualifiedTableName) // view name (qualified or unqualified)
-    this.CONSUME(As)
-    // Capture the SELECT query - consume everything after AS
-    this.SUBRULE(this.selectQuery)
-  })
+    // Handle schema-qualified names (database.table)
+    if (this.check('DOT')) {
+      this.advance()
+      const tableName = this.expectIdentifierOrKeyword()
+      name = `${name}.${tableName}`
+    }
 
-  private createMaterializedView = this.RULE('createMaterializedView', () => {
-    this.CONSUME(Create)
-    this.CONSUME(Materialized)
-    this.CONSUME(View)
-    this.OPTION(() => {
-      this.CONSUME(If)
-      this.CONSUME(Not)
-      this.CONSUME(Exists)
-    })
-    this.SUBRULE(this.qualifiedTableName) // view name (qualified or unqualified)
-    this.CONSUME(To)
-    this.SUBRULE2(this.qualifiedTableName) // target table name (qualified or unqualified)
+    // ON CLUSTER
+    if (this.check('ON')) {
+      this.advance()
+      this.expect('CLUSTER')
+      this.expectIdentifier()
+    }
 
-    // Optional: column definitions (system.tables format)
-    this.OPTION2(() => {
-      this.CONSUME(LParen) // column definitions start
-      this.SUBRULE(this.columns)
-      this.CONSUME(RParen) // column definitions end
-    })
+    this.expect('LPAREN')
+    const columns = this.parseColumnList()
+    this.expect('RPAREN')
 
-    // Optional: AS SELECT query (source code format)
-    this.OPTION3(() => {
-      this.CONSUME(As)
-      this.SUBRULE(this.selectQuery)
-    })
-  })
+    let engine: string | undefined
+    let engineArgs: string | undefined
+    let orderBy: string[] | undefined
+    let partitionBy: string[] | undefined
+    let settings: Record<string, string> | undefined
 
-  // Basic SELECT statement without token catchall (for use inside CTEs)
-  private basicSelectStatement = this.RULE('basicSelectStatement', () => {
-    this.CONSUME(Select)
-    this.SUBRULE(this.selectList)
-    this.OPTION(() => {
-      this.SUBRULE(this.fromClause)
-    })
-    this.OPTION2(() => {
-      this.SUBRULE(this.whereClause)
-    })
-    // NO anyToken catchall here - we want to stop at the closing paren
-  })
+    // ENGINE
+    if (this.check('ENGINE')) {
+      this.advance()
+      this.expect('EQ')
+      engine = this.expectIdentifier()
 
-  // NEW: Query parser - gracefully handles SELECT queries and falls back for complex ones
-  private selectQuery = this.RULE('selectQuery', () => {
-    this.OR([
-      {
-        // WITH ... SELECT pattern (CTE)
-        GATE: () => this.LA(1).tokenType.name === 'With',
-        ALT: () => {
-          this.SUBRULE(this.withClause)
-          this.CONSUME(Select)
-          this.SUBRULE2(this.selectList)
-          this.OPTION(() => {
-            this.SUBRULE(this.fromClause)
-          })
-          this.OPTION2(() => {
-            this.SUBRULE(this.whereClause)
-          })
-          // Capture any remaining tokens (GROUP BY, ORDER BY, UNION, etc.)
-          this.MANY(() => {
-            this.SUBRULE(this.anyToken)
-          })
-        }
-      },
-      {
-        // Structured SELECT parsing for simple queries (no WITH)
-        GATE: () => this.LA(1).tokenType.name === 'Select',
-        ALT: () => {
-          this.CONSUME2(Select)
-          this.SUBRULE3(this.selectList)
-          this.OPTION3(() => {
-            this.SUBRULE2(this.fromClause)
-          })
-          this.OPTION4(() => {
-            this.SUBRULE2(this.whereClause)
-          })
-          // Capture any remaining tokens (GROUP BY, ORDER BY, UNION, etc.)
-          this.MANY2(() => {
-            this.SUBRULE2(this.anyToken)
-          })
-        }
-      },
-      {
-        // Fallback for anything else - capture as tokens
-        ALT: () => {
-          this.AT_LEAST_ONE(() => {
-            this.SUBRULE3(this.anyToken)
-          })
+      if (this.check('LPAREN')) {
+        engineArgs = this.captureParenthesized()
+      }
+    }
+
+    // PARTITION BY (comes before ORDER BY in ClickHouse)
+    if (this.check('PARTITION')) {
+      this.advance()
+      this.expect('BY')
+      partitionBy = []
+
+      // Check for optional parentheses
+      const hasParens = this.match('LPAREN')
+
+      do {
+        // Always capture full expressions (including function calls like toYYYYMM(timestamp))
+        partitionBy.push(this.captureUntilCommaOrKeyword())
+      } while (this.match('COMMA'))
+
+      if (hasParens) {
+        this.expect('RPAREN')
+      }
+    }
+
+    // ORDER BY
+    if (this.check('ORDER')) {
+      this.advance()
+      this.expect('BY')
+      orderBy = []
+
+      // Check for optional parentheses
+      const hasParens = this.match('LPAREN')
+
+      do {
+        // Always capture full expressions
+        orderBy.push(this.captureUntilCommaOrKeyword())
+      } while (this.match('COMMA'))
+
+      if (hasParens) {
+        this.expect('RPAREN')
+      }
+    }
+
+    // SETTINGS
+    if (this.check('SETTINGS')) {
+      this.advance()
+      settings = this.parseSettings()
+    }
+
+    const table: DDLTable = {
+      name,
+      engine,
+      engineArgs,
+      columns,
+      orderBy,
+      partitionBy,
+      settings
+    }
+
+    return { type: 'CREATE_TABLE', table }
+  }
+
+  private parseColumnList(): DDLColumn[] {
+    const columns: DDLColumn[] = []
+
+    while (!this.check('RPAREN')) {
+      const name = this.expectIdentifier()
+
+      // Check if this is an ALIAS or typeless MATERIALIZED column
+      // ALIAS columns don't have types: column_name ALIAS expression
+      // MATERIALIZED can be with or without type: column_name [Type] MATERIALIZED expression
+      let type = ''
+      if (this.check('ALIAS')) {
+        // ALIAS column - no type, inferred from expression
+        type = ''
+      } else if (this.check('MATERIALIZED')) {
+        // MATERIALIZED without type
+        type = ''
+      } else {
+        // Regular column with type
+        type = this.parseType()
+      }
+
+      let nullable = true
+      let defaultValue: string | undefined
+      let materialized: string | undefined
+      let alias: string | undefined
+      let comment: string | undefined
+
+      // Column modifiers
+      while (true) {
+        if (this.check('NOT')) {
+          this.advance()
+          this.expect('NULL')
+          nullable = false
+        } else if (this.check('NULL')) {
+          // NULL keyword (equivalent to Nullable)
+          this.advance()
+          nullable = true
+        } else if (this.check('NULLABLE')) {
+          this.advance()
+          nullable = true
+        } else if (this.check('DEFAULT')) {
+          this.advance()
+          defaultValue = this.captureExpression()
+        } else if (this.check('MATERIALIZED')) {
+          this.advance()
+          materialized = this.captureExpression()
+        } else if (this.check('ALIAS')) {
+          this.advance()
+          alias = this.captureExpression()
+        } else if (this.check('COMMENT')) {
+          this.advance()
+          comment = this.expect('STRING').value
+        } else {
+          break
         }
       }
-    ])
-  })
 
-  // Catch-all for any token (for graceful degradation)
-  private anyToken = this.RULE('anyToken', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(Identifier) },
-      { ALT: () => this.CONSUME(LParen) },
-      { ALT: () => this.CONSUME(RParen) },
-      { ALT: () => this.CONSUME(Comma) },
-      { ALT: () => this.CONSUME(Dot) },
-      { ALT: () => this.CONSUME(Star) },
-      { ALT: () => this.CONSUME(StringLiteral) },
-      { ALT: () => this.CONSUME(NumberLiteral) },
-      { ALT: () => this.CONSUME(BacktickIdentifier) },
-      { ALT: () => this.CONSUME(LCurly) },
-      { ALT: () => this.CONSUME(RCurly) },
-      { ALT: () => this.CONSUME(Colon) },
-      { ALT: () => this.CONSUME(LBracket) },
-      { ALT: () => this.CONSUME(RBracket) },
-      { ALT: () => this.CONSUME(Plus) },
-      { ALT: () => this.CONSUME(Minus) },
-      { ALT: () => this.CONSUME(Arrow) },
-      { ALT: () => this.CONSUME(Slash) },
-      { ALT: () => this.CONSUME(Percent) },
-      { ALT: () => this.CONSUME(Semicolon) },
-      // Comparison operators
-      { ALT: () => this.CONSUME(Equals) },
-      { ALT: () => this.CONSUME(NotEquals) },
-      { ALT: () => this.CONSUME(NotEquals2) },
-      { ALT: () => this.CONSUME(GreaterThan) },
-      { ALT: () => this.CONSUME(LessThan) },
-      { ALT: () => this.CONSUME(GreaterThanOrEqual) },
-      { ALT: () => this.CONSUME(LessThanOrEqual) },
-      // Keywords
-      { ALT: () => this.CONSUME(Where) },
-      { ALT: () => this.CONSUME(In) },
-      { ALT: () => this.CONSUME(From) },
-      { ALT: () => this.CONSUME(GroupBy) },
-      { ALT: () => this.CONSUME(OrderBy) },
-      { ALT: () => this.CONSUME(Having) },
-      { ALT: () => this.CONSUME(Limit) },
-      { ALT: () => this.CONSUME(Offset) },
-      { ALT: () => this.CONSUME(Union) },
-      { ALT: () => this.CONSUME(All) },
-      { ALT: () => this.CONSUME(Join) },
-      { ALT: () => this.CONSUME(Left) },
-      { ALT: () => this.CONSUME(Right) },
-      { ALT: () => this.CONSUME(Inner) },
-      { ALT: () => this.CONSUME(Full) },
-      { ALT: () => this.CONSUME(Cross) },
-      { ALT: () => this.CONSUME(On) },
-      { ALT: () => this.CONSUME(Using) },
-      { ALT: () => this.CONSUME(As) },
-      { ALT: () => this.CONSUME(And) },
-      { ALT: () => this.CONSUME(Or) },
-      { ALT: () => this.CONSUME(Not) },
-      { ALT: () => this.CONSUME(Null) },
-      { ALT: () => this.CONSUME(Like) },
-      { ALT: () => this.CONSUME(Between) },
-      { ALT: () => this.CONSUME(Cast) },
-      { ALT: () => this.CONSUME(Interval) },
-      { ALT: () => this.CONSUME(PartitionBy) },
-      { ALT: () => this.CONSUME(Array) },
-      { ALT: () => this.CONSUME(If) },
-      { ALT: () => this.CONSUME(With) },
-      { ALT: () => this.CONSUME(Materialized) },
-      { ALT: () => this.CONSUME(Replace) },
-      { ALT: () => this.CONSUME(To) },
-      { ALT: () => this.CONSUME(Engine) },
-      { ALT: () => this.CONSUME(Default) },
-      { ALT: () => this.CONSUME(Nullable) },
-      { ALT: () => this.CONSUME(Alias) },
-      { ALT: () => this.CONSUME(Comment) },
-      { ALT: () => this.CONSUME(PrimaryKey) },
-      { ALT: () => this.CONSUME(Settings) },
-      { ALT: () => this.CONSUME(Exists) },
-      // Interval units
-      { ALT: () => this.CONSUME(Day) },
-      { ALT: () => this.CONSUME(Days) },
-      { ALT: () => this.CONSUME(Hour) },
-      { ALT: () => this.CONSUME(Hours) },
-      { ALT: () => this.CONSUME(Minute) },
-      { ALT: () => this.CONSUME(Minutes) },
-      { ALT: () => this.CONSUME(Second) },
-      { ALT: () => this.CONSUME(Seconds) },
-      { ALT: () => this.CONSUME(Week) },
-      { ALT: () => this.CONSUME(Weeks) },
-      { ALT: () => this.CONSUME(Month) },
-      { ALT: () => this.CONSUME(Months) },
-      { ALT: () => this.CONSUME(Year) },
-      { ALT: () => this.CONSUME(Years) },
-      // Data types
-      { ALT: () => this.CONSUME(SimpleAggregateFunction) },
-      { ALT: () => this.CONSUME(AggregateFunction) },
-      { ALT: () => this.CONSUME(DateTime64) },
-      { ALT: () => this.CONSUME(DateTime) },
-      { ALT: () => this.CONSUME(Date32) },
-      { ALT: () => this.CONSUME(Date) },
-      { ALT: () => this.CONSUME(Tuple) },
-      { ALT: () => this.CONSUME(Map) },
-      { ALT: () => this.CONSUME(Nested) },
-      { ALT: () => this.CONSUME(LowCardinality) },
-      { ALT: () => this.CONSUME(Enum8) },
-      { ALT: () => this.CONSUME(Enum16) },
-      { ALT: () => this.CONSUME(FixedString) },
-      { ALT: () => this.CONSUME(UInt64) },
-      { ALT: () => this.CONSUME(UInt32) },
-      { ALT: () => this.CONSUME(UInt16) },
-      { ALT: () => this.CONSUME(UInt8) },
-      { ALT: () => this.CONSUME(Int64) },
-      { ALT: () => this.CONSUME(Int32) },
-      { ALT: () => this.CONSUME(Int16) },
-      { ALT: () => this.CONSUME(Int8) },
-      { ALT: () => this.CONSUME(Float64) },
-      { ALT: () => this.CONSUME(Float32) },
-      { ALT: () => this.CONSUME(Decimal) },
-      { ALT: () => this.CONSUME(String) },
-      { ALT: () => this.CONSUME(UUID) },
-      { ALT: () => this.CONSUME(Bool) },
-      { ALT: () => this.CONSUME(IPv4) },
-      { ALT: () => this.CONSUME(IPv6) },
-      { ALT: () => this.CONSUME(JSONType) },
-      { ALT: () => this.CONSUME(Other) },
-    ])
-  })
+      columns.push({
+        name,
+        type,
+        nullable,
+        default: defaultValue,
+        materialized,
+        alias,
+        comment
+      })
 
-  // WHERE clause
-  private whereClause = this.RULE('whereClause', () => {
-    this.CONSUME(Where)
-    this.SUBRULE(this.orExpression)
-  })
+      if (!this.match('COMMA')) break
+    }
 
-  // WITH clause (CTEs - Common Table Expressions)
-  private withClause = this.RULE('withClause', () => {
-    this.CONSUME(With)
-    this.AT_LEAST_ONE_SEP({
-      SEP: Comma,
-      DEF: () => this.SUBRULE(this.cteDefinition)
-    })
-  })
+    return columns
+  }
 
-  // CTE definition: name AS (SELECT ...)
-  private cteDefinition = this.RULE('cteDefinition', () => {
-    this.CONSUME(Identifier)  // CTE name
-    this.CONSUME(As)
-    this.CONSUME(LParen)
-    this.SUBRULE(this.basicSelectStatement)  // Use basic SELECT (no token catchall)
-    this.CONSUME(RParen)
-  })
+  private parseType(): string {
+    // Handle special type keywords that are also reserved words
+    let type = ''
 
-  // Level 1: OR (lowest precedence)
-  private orExpression = this.RULE('orExpression', () => {
-    this.SUBRULE(this.andExpression)
-    this.MANY(() => {
-      this.CONSUME(Or)
-      this.SUBRULE2(this.andExpression)
-    })
-  })
+    if (this.check('NULLABLE')) {
+      // Nullable(Type) - unwrap to just Type
+      this.advance()
+      this.expect('LPAREN')
+      type = this.parseType()  // Recursive call for inner type
+      this.expect('RPAREN')
+      return type
+    } else {
+      type = this.current().value
+      this.advance()
+    }
 
-  // Level 2: AND
-  private andExpression = this.RULE('andExpression', () => {
-    this.SUBRULE(this.comparisonExpression)
-    this.MANY(() => {
-      this.CONSUME(And)
-      this.SUBRULE2(this.comparisonExpression)
-    })
-  })
+    // Handle parameterized types like Array(String), Map(String, Int32)
+    if (this.check('LPAREN')) {
+      type += this.captureParenthesized()
+    }
 
-  // Level 3: Comparison (=, !=, <, >, <=, >=, IN)
-  private comparisonExpression = this.RULE('comparisonExpression', () => {
-    this.SUBRULE(this.primaryValue)
-    this.OPTION(() => {
-      this.OR([
-        { ALT: () => this.CONSUME(Equals) },
-        { ALT: () => this.CONSUME(NotEquals) },
-        { ALT: () => this.CONSUME(LessThan) },
-        { ALT: () => this.CONSUME(GreaterThan) },
-        { ALT: () => this.CONSUME(LessThanOrEqual) },
-        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
-        { ALT: () => this.CONSUME(In) },
-      ])
-      this.SUBRULE2(this.primaryValue)
-    })
-  })
+    return type
+  }
 
-  // Level 4: Primary values (literals, columns, parentheses, parameters)
-  private primaryValue = this.RULE('primaryValue', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(StringLiteral) },
-      { ALT: () => this.CONSUME(NumberLiteral) },
-      { ALT: () => this.CONSUME(Null) },
-      {
-        // Parameter: {param:Type} or ({param:Type})
-        GATE: () => {
-          const la1 = this.LA(1)
-          const la2 = this.LA(2)
-          // Match {param or ({param
-          return la1.tokenType.name === 'LCurly' ||
-                 (la1.tokenType.name === 'LParen' && la2.tokenType.name === 'LCurly')
-        },
-        ALT: () => this.SUBRULE(this.parameter)
-      },
-      {
-        // Parenthesized expression (not a parameter)
-        ALT: () => {
-          this.CONSUME(LParen)
-          this.SUBRULE(this.orExpression)
-          this.CONSUME(RParen)
-        }
-      },
-      { ALT: () => this.SUBRULE(this.simpleColumn) },
-    ])
-  })
+  private parseSettings(): Record<string, string> {
+    const settings: Record<string, string> = {}
 
-  // Keep old expression rule for backward compatibility (just delegates to orExpression)
-  private expression = this.RULE('expression', () => {
-    this.SUBRULE(this.orExpression)
-  })
+    do {
+      const key = this.expectIdentifier()
+      this.expect('EQ')
+      const value = this.current().value
+      this.advance()
+      settings[key] = value
+    } while (this.match('COMMA'))
 
-  // Parameter syntax: {param:Type}
-  private parameter = this.RULE('parameter', () => {
-    this.OPTION(() => this.CONSUME(LParen))  // Optional (
-    this.CONSUME(LCurly)
-    this.CONSUME(Identifier)  // param name
-    this.CONSUME(Colon)
-    this.SUBRULE(this.type)  // Array(String)
-    this.CONSUME(RCurly)
-    this.OPTION2(() => this.CONSUME(RParen))  // Optional )
-  })
+    return settings
+  }
 
-  // Parse the list of columns: id, name, email
-  private selectList = this.RULE('selectList', () => {
-    this.AT_LEAST_ONE_SEP({
-      SEP: Comma,
-      DEF: () => {
-        this.SUBRULE(this.selectColumn)
+  // ========== CREATE VIEW ==========
+
+  private parseCreateView(): DDLStatement {
+    this.expect('VIEW')
+
+    // IF NOT EXISTS
+    if (this.check('IF')) {
+      this.advance()
+      this.expect('NOT')
+      this.expect('EXISTS')
+    }
+
+    let name = this.expectIdentifier()
+
+    // Handle schema-qualified names (database.view)
+    if (this.check('DOT')) {
+      this.advance()
+      const viewName = this.expectIdentifier()
+      name = `${name}.${viewName}`
+    }
+
+    // ON CLUSTER
+    if (this.check('ON')) {
+      this.advance()
+      this.expect('CLUSTER')
+      this.expectIdentifier()
+    }
+
+    this.expect('AS')
+
+    const select = this.parseSelect()
+
+    const view: DDLView = { name, select }
+
+    return { type: 'CREATE_VIEW', view }
+  }
+
+  // ========== CREATE MATERIALIZED VIEW ==========
+
+  private parseCreateMaterializedView(): DDLStatement {
+    this.expect('MATERIALIZED')
+    this.expect('VIEW')
+
+    // IF NOT EXISTS
+    if (this.check('IF')) {
+      this.advance()
+      this.expect('NOT')
+      this.expect('EXISTS')
+    }
+
+    let name = this.expectIdentifier()
+
+    // Handle schema-qualified names (database.view)
+    if (this.check('DOT')) {
+      this.advance()
+      const viewName = this.expectIdentifier()
+      name = `${name}.${viewName}`
+    }
+
+    // ON CLUSTER
+    if (this.check('ON')) {
+      this.advance()
+      this.expect('CLUSTER')
+      this.expectIdentifier()
+    }
+
+    this.expect('TO')
+    let toTable = this.expectIdentifier()
+
+    // Handle schema-qualified TO table
+    if (this.check('DOT')) {
+      this.advance()
+      const tableName = this.expectIdentifier()
+      toTable = `${toTable}.${tableName}`
+    }
+
+    // Optional column definitions (system.tables format)
+    let columns: DDLColumn[] | undefined
+    if (this.check('LPAREN')) {
+      this.advance()
+      columns = this.parseColumnList()
+      this.expect('RPAREN')
+    }
+
+    // Optional AS SELECT clause
+    let selectQuery: string | undefined
+    if (this.check('AS')) {
+      this.expect('AS')
+      selectQuery = this.captureRemaining()
+    }
+
+    const materializedView: DDLMaterializedView = {
+      name,
+      toTable,
+      columns,
+      selectQuery
+    }
+
+    return { type: 'CREATE_MATERIALIZED_VIEW', materializedView }
+  }
+
+  // ========== SELECT STATEMENT ==========
+
+  private parseSelect(): SelectStatement {
+    const with_ = this.parseWithClause()
+
+    this.expect('SELECT')
+
+    const columns = this.parseSelectList()
+
+    let from: FromClause | undefined
+    if (this.check('FROM')) {
+      from = this.parseFromClause()
+    }
+
+    let where: Expression | undefined
+    if (this.check('WHERE')) {
+      where = this.parseWhereClause()
+    }
+
+    return {
+      type: 'SELECT',
+      with: with_,
+      columns,
+      from,
+      where
+    }
+  }
+
+  private parseWithClause(): CTEDefinition[] | undefined {
+    if (!this.check('WITH')) return undefined
+
+    this.advance()
+
+    const ctes: CTEDefinition[] = []
+
+    do {
+      const name = this.expectIdentifier()
+      this.expect('AS')
+      this.expect('LPAREN')
+      const query = this.parseSelect()
+      this.expect('RPAREN')
+
+      ctes.push({
+        type: 'CTE',
+        name,
+        query
+      })
+    } while (this.match('COMMA'))
+
+    return ctes
+  }
+
+  private parseSelectList(): SelectColumn[] {
+    const columns: SelectColumn[] = []
+
+    do {
+      columns.push(this.parseSelectColumn())
+    } while (this.match('COMMA'))
+
+    return columns
+  }
+
+  private parseSelectColumn(): SelectColumn {
+    // SELECT *
+    if (this.check('STAR')) {
+      this.advance()
+      return {
+        expression: { type: 'COLUMN', name: '*' }
       }
-    })
-  })
+    }
 
-  // Parse a single column (permissive - handles simple and complex expressions)
-  private selectColumn = this.RULE('selectColumn', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(Star) },  // SELECT *
-      {
-        // Function call or window function: identifier followed by (
-        GATE: () => {
-          const la1 = this.LA(1)
-          const la2 = this.LA(2)
-          return la1.tokenType.name === 'Identifier' && la2.tokenType.name === 'LParen'
-        },
-        ALT: () => this.SUBRULE(this.functionCallOrWindow)
-      },
-      { ALT: () => this.SUBRULE(this.orExpression) }   // Any other expression
-    ])
-    // Optional alias: [AS] alias_name
-    this.OPTION(() => {
-      this.OPTION2(() => this.CONSUME(As))  // AS keyword is optional
-      this.CONSUME(Identifier)  // alias name
-    })
-  })
+    const expression = this.parseExpression()
 
-  // Function call or window function: funcName(...) [OVER (...)]
-  private functionCallOrWindow = this.RULE('functionCallOrWindow', () => {
-    this.SUBRULE(this.functionCall)
-    // Optional OVER clause makes it a window function
-    this.OPTION(() => {
-      this.CONSUME(Over)
-      this.CONSUME(LParen)
-      // Optional PARTITION BY clause
-      this.OPTION2(() => {
-        this.CONSUME(PartitionBy)
-        this.SUBRULE(this.orExpression)
-        this.MANY(() => {
-          this.CONSUME(Comma)
-          this.SUBRULE2(this.orExpression)
-        })
-      })
-      // Optional ORDER BY clause
-      this.OPTION3(() => {
-        this.CONSUME(OrderBy)
-        this.SUBRULE(this.orderByItem)
-        this.MANY2(() => {
-          this.CONSUME2(Comma)
-          this.SUBRULE2(this.orderByItem)
-        })
-      })
-      this.CONSUME(RParen)
-    })
-  })
+    // Optional alias
+    let alias: string | undefined
+    if (this.check('AS')) {
+      this.advance()
+      alias = this.expectIdentifier()
+    } else if (this.check('IDENTIFIER') && !this.isReservedKeyword(this.current().value)) {
+      alias = this.expectIdentifier()
+    }
 
-  // Simple column reference: identifier or qualified identifier
-  private simpleColumn = this.RULE('simpleColumn', () => {
-    this.CONSUME(Identifier)
-    this.OPTION(() => {
-      this.CONSUME(Dot)
-      this.CONSUME2(Identifier)
-    })
-  })
+    return { expression, alias }
+  }
 
-  // Function call: funcName(arg1, arg2, ...)
-  private functionCall = this.RULE('functionCall', () => {
-    this.CONSUME(Identifier)  // Function name
-    this.CONSUME(LParen)
-    // Optional arguments
-    this.OPTION(() => {
-      this.OR([
-        // Special case: COUNT(*), SUM(*), etc.
-        { ALT: () => this.CONSUME(Star) },
-        // Regular arguments: comma-separated column expressions
-        {
-          ALT: () => {
-            // First argument
-            this.AT_LEAST_ONE(() => {
-              this.SUBRULE(this.columnToken)
-            })
-            // Additional arguments
-            this.MANY(() => {
-              this.CONSUME(Comma)
-              this.AT_LEAST_ONE2(() => {
-                this.SUBRULE2(this.columnToken)
-              })
-            })
+  // ========== EXPRESSIONS ==========
+
+  private parseExpression(): Expression {
+    return this.parseOrExpression()
+  }
+
+  private parseOrExpression(): Expression {
+    let left = this.parseAndExpression()
+
+    while (this.check('OR_KW')) {
+      this.advance()
+      const right = this.parseAndExpression()
+      left = {
+        type: 'BINARY_OP',
+        operator: 'OR',
+        left,
+        right
+      }
+    }
+
+    return left
+  }
+
+  private parseAndExpression(): Expression {
+    let left = this.parseComparisonExpression()
+
+    while (this.check('AND')) {
+      this.advance()
+      const right = this.parseComparisonExpression()
+      left = {
+        type: 'BINARY_OP',
+        operator: 'AND',
+        left,
+        right
+      }
+    }
+
+    return left
+  }
+
+  private parseComparisonExpression(): Expression {
+    let left = this.parseAdditiveExpression()
+
+    // Handle IS NULL / IS NOT NULL
+    if (this.check('IS')) {
+      this.advance()
+      const isNot = this.match('NOT')
+      this.expect('NULL')
+
+      const operator: BinaryOp['operator'] = isNot ? 'IS NOT NULL' : 'IS NULL'
+      const right: Literal = {
+        type: 'LITERAL',
+        valueType: 'NULL',
+        value: null
+      }
+
+      return {
+        type: 'BINARY_OP',
+        operator,
+        left,
+        right
+      }
+    }
+
+    // Handle NOT IN, NOT LIKE, etc.
+    let isNot = false
+    if (this.check('NOT')) {
+      const nextToken = this.peek()
+      if (nextToken && (nextToken.type === 'IN' || nextToken.type === 'LIKE')) {
+        isNot = true
+        this.advance() // consume NOT
+      }
+    }
+
+    const operators: TokenType[] = ['EQ', 'NEQ', 'NEQ2', 'LT', 'GT', 'LTE', 'GTE', 'IN', 'LIKE']
+    const current = this.current().type
+
+    if (operators.includes(current)) {
+      const opMap: Partial<Record<TokenType, BinaryOp['operator']>> = {
+        'EQ': '=',
+        'NEQ': '!=',
+        'NEQ2': '!=',
+        'LT': '<',
+        'GT': '>',
+        'LTE': '<=',
+        'GTE': '>=',
+        'IN': 'IN',
+        'LIKE': 'LIKE'
+      }
+      let operator = opMap[current]!
+
+      // Modify operator if NOT was present
+      if (isNot) {
+        if (operator === 'IN') operator = 'NOT IN' as any
+        if (operator === 'LIKE') operator = 'NOT LIKE' as any
+      }
+
+      this.advance()
+
+      // Special handling for IN/NOT IN operator with array literals or subqueries
+      let right: Expression
+      if ((operator === 'IN' || operator === 'NOT IN') && this.check('LPAREN')) {
+        const checkpoint = this.pos
+        this.advance() // consume LPAREN
+
+        // Check if this is a SELECT (subquery)
+        if (this.check('SELECT')) {
+          const query = this.parseSelect()
+          this.expect('RPAREN')
+          right = {
+            type: 'SUBQUERY',
+            query
+          }
+        } else {
+          // Try to parse as array literal (e.g., ('a', 'b', 'c'))
+          const elements: Expression[] = []
+          while (!this.check('RPAREN') && !this.check('EOF')) {
+            elements.push(this.parsePrimaryExpression())
+            if (!this.match('COMMA')) break
+          }
+
+          if (this.check('RPAREN')) {
+            this.advance() // consume RPAREN
+            right = {
+              type: 'ARRAY_LITERAL',
+              elements
+            }
+          } else {
+            // Not an array literal, rewind and parse normally
+            this.pos = checkpoint
+            right = this.parseAdditiveExpression()
           }
         }
-      ])
-    })
-    this.CONSUME(RParen)
-  })
+      } else {
+        right = this.parseAdditiveExpression()
+      }
 
-  // Window function: functionCall OVER (PARTITION BY ... ORDER BY ...)
-  // Order by item: expression [ASC|DESC]
-  private orderByItem = this.RULE('orderByItem', () => {
-    this.SUBRULE(this.orExpression)  // The expression to order by
-    this.OPTION(() => {
-      this.OR([
-        { ALT: () => this.CONSUME(Asc) },
-        { ALT: () => this.CONSUME(Desc) }
-      ])
-    })
-  })
+      return {
+        type: 'BINARY_OP',
+        operator: operator as any,
+        left,
+        right
+      }
+    }
 
-  // Tokens that can appear in a column expression (everything except delimiters)
-  // NOTE: Removed Identifier and LParen to avoid ambiguity with functionCall
-  // NOTE: Removed RParen - it should be consumed explicitly by rules that need it (like functionCall)
-  private columnToken = this.RULE('columnToken', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(Dot) },
-      { ALT: () => this.CONSUME(StringLiteral) },
-      { ALT: () => this.CONSUME(NumberLiteral) },
-      { ALT: () => this.CONSUME(BacktickIdentifier) },
-      { ALT: () => this.CONSUME(LCurly) },
-      { ALT: () => this.CONSUME(RCurly) },
-      { ALT: () => this.CONSUME(Colon) },
-      { ALT: () => this.CONSUME(LBracket) },
-      { ALT: () => this.CONSUME(RBracket) },
-      { ALT: () => this.CONSUME(Plus) },
-      { ALT: () => this.CONSUME(Minus) },
-      { ALT: () => this.CONSUME(Arrow) },
-      { ALT: () => this.CONSUME(Slash) },
-      { ALT: () => this.CONSUME(Percent) },
-      { ALT: () => this.CONSUME(Equals) },
-      { ALT: () => this.CONSUME(NotEquals) },
-      { ALT: () => this.CONSUME(NotEquals2) },
-      { ALT: () => this.CONSUME(GreaterThan) },
-      { ALT: () => this.CONSUME(LessThan) },
-      { ALT: () => this.CONSUME(GreaterThanOrEqual) },
-      { ALT: () => this.CONSUME(LessThanOrEqual) },
-      { ALT: () => this.CONSUME(In) },
-      { ALT: () => this.CONSUME(And) },
-      { ALT: () => this.CONSUME(Or) },
-      { ALT: () => this.CONSUME(Not) },
-      { ALT: () => this.CONSUME(Null) },
-      { ALT: () => this.CONSUME(Like) },
-      { ALT: () => this.CONSUME(Between) },
-      { ALT: () => this.CONSUME(Cast) },
-      { ALT: () => this.CONSUME(Interval) },
-      { ALT: () => this.CONSUME(Array) },
-      { ALT: () => this.CONSUME(If) },
-      { ALT: () => this.CONSUME(As) },
-      // Data types
-      { ALT: () => this.CONSUME(String) },
-      { ALT: () => this.CONSUME(Int32) },
-      { ALT: () => this.CONSUME(Int64) },
-      { ALT: () => this.CONSUME(Float32) },
-      { ALT: () => this.CONSUME(Float64) },
-      { ALT: () => this.CONSUME(Date) },
-      { ALT: () => this.CONSUME(DateTime) },
-      { ALT: () => this.CONSUME(UUID) },
-      { ALT: () => this.CONSUME(Other) },
-      // Note: Comma, From, Where, GroupBy, OrderBy, etc. are NOT included
-      // These act as delimiters that end a column expression
-    ])
-  })
+    return left
+  }
 
-  // Parse FROM clause
-  private fromClause = this.RULE('fromClause', () => {
-    this.CONSUME(From)
-    this.SUBRULE(this.tableRef)
-  })
+  private parseAdditiveExpression(): Expression {
+    let left = this.parseMultiplicativeExpression()
 
-  // Parse table reference
-  private tableRef = this.RULE('tableRef', () => {
-    this.CONSUME(Identifier)  // table name
-  })
+    while (this.check('PLUS') || this.check('MINUS')) {
+      const operator = this.current().type === 'PLUS' ? '+' : '-'
+      this.advance()
+      const right = this.parseMultiplicativeExpression()
+      left = {
+        type: 'BINARY_OP',
+        operator: operator as any,
+        left,
+        right
+      }
+    }
 
-  private qualifiedTableName = this.RULE('qualifiedTableName', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(Identifier) }, // schema or table name as identifier
-      { ALT: () => this.CONSUME(BacktickIdentifier) }, // schema or table name as backtick identifier
-      { ALT: () => this.CONSUME(Table) } // table name as table keyword
-    ])
-    this.OPTION(() => {
-      this.CONSUME(Dot) // dot separator
-      this.OR2([
-        { ALT: () => this.CONSUME2(Identifier) }, // table name as identifier
-        { ALT: () => this.CONSUME2(BacktickIdentifier) }, // table name as backtick identifier
-        { ALT: () => this.CONSUME2(Table) } // table name as table keyword
-      ])
-    })
-  })
+    return left
+  }
 
-  private engineClause = this.RULE('engineClause', () => {
-    this.CONSUME(Engine)
-    this.CONSUME(Equals)
-    this.CONSUME(Identifier) // engine name
-    this.OPTION(() => {
-      this.CONSUME(LParen) // engine start paren
-      this.OPTION2(() => {
-        this.SUBRULE(this.simpleExpression)
-        this.MANY(() => {
-          this.CONSUME(Comma)
-          this.SUBRULE2(this.simpleExpression)
-        })
-      })
-      this.CONSUME(RParen) // engine end paren
-    })
-  })
+  private parseMultiplicativeExpression(): Expression {
+    let left = this.parsePrimaryExpression()
 
-  private primaryKeyClause = this.RULE('primaryKeyClause', () => {
-    this.CONSUME(PrimaryKey)
-    this.CONSUME(LParen)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME(Identifier) })
-    this.CONSUME(RParen)
-  })
+    while (this.check('STAR') || this.check('SLASH') || this.check('PERCENT')) {
+      const opMap: Record<string, string> = { 'STAR': '*', 'SLASH': '/', 'PERCENT': '%' }
+      const operator = opMap[this.current().type]
+      this.advance()
+      const right = this.parsePrimaryExpression()
+      left = {
+        type: 'BINARY_OP',
+        operator: operator as any,
+        left,
+        right
+      }
+    }
 
-  private orderByClause = this.RULE('orderByClause', () => {
-    this.CONSUME(OrderBy)
-    this.OR([
-      // With parentheses: ORDER BY (id, name)
-      {
-        ALT: () => {
-          this.CONSUME2(LParen)
-          this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.CONSUME2(Identifier) })
-          this.CONSUME2(RParen)
-        }
-      },
-      // Without parentheses: ORDER BY id, name
-      {
-        ALT: () => {
-          this.AT_LEAST_ONE_SEP2({ SEP: Comma, DEF: () => this.CONSUME3(Identifier) })
+    return left
+  }
+
+  private parsePrimaryExpression(): Expression {
+    // Parenthesized expression or tuple literal
+    if (this.check('LPAREN')) {
+      this.advance() // consume LPAREN
+
+      // Check if this is a SELECT (subquery)
+      if (this.check('SELECT')) {
+        const query = this.parseSelect()
+        this.expect('RPAREN')
+        return {
+          type: 'SUBQUERY',
+          query
         }
       }
-    ])
-  })
 
-  private partitionByClause = this.RULE('partitionByClause', () => {
-    this.CONSUME(PartitionBy)
-    // Optional parentheses around partition expression(s)
-    const hasParens = this.OPTION(() => this.CONSUME(LParen))
+      // Try to parse as tuple literal or parenthesized expression
+      const firstExpr = this.parseOrExpression()
 
-    // One or more comma-separated expressions
-    this.SUBRULE(this.simpleExpression)
-    this.MANY(() => {
-      this.CONSUME(Comma)
-      this.SUBRULE2(this.simpleExpression)
-    })
+      // If we see a comma, it's a tuple literal
+      if (this.check('COMMA')) {
+        const elements: Expression[] = [firstExpr]
+        while (this.match('COMMA')) {
+          elements.push(this.parseOrExpression())
+        }
+        this.expect('RPAREN')
+        return {
+          type: 'TUPLE_LITERAL',
+          elements
+        }
+      }
 
-    if (hasParens) {
-      this.CONSUME(RParen)
+      // Single parenthesized expression
+      this.expect('RPAREN')
+      return firstExpr
     }
-  })
 
-  private settingsClause = this.RULE('settingsClause', () => {
-    this.CONSUME(Settings)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.setting) })
-  })
+    // CAST expression
+    if (this.check('CAST')) {
+      return this.parseCast()
+    }
 
-  private setting = this.RULE('setting', () => {
-    this.CONSUME(Identifier) // setting name
-    this.CONSUME(Equals)
-    this.SUBRULE(this.simpleExpression)
-  })
+    // IF function (treat as function even though it's a keyword)
+    if (this.check('IF') && this.peek() && this.peek()!.type === 'LPAREN') {
+      const name = this.current().value
+      this.advance() // consume 'if'
+      this.expect('LPAREN')
+      const args: Expression[] = []
+      while (!this.check('RPAREN')) {
+        args.push(this.parseOrExpression())
+        if (!this.check('RPAREN')) {
+          this.expect('COMMA')
+        }
+      }
+      this.expect('RPAREN')
+      return { type: 'FUNCTION_CALL', name, args }
+    }
 
-  // Simplified expression parsing to avoid ambiguity
-  private simpleExpression = this.RULE('simpleExpression', () => {
-    this.SUBRULE(this.expressionTerm)
-    this.MANY(() => {
-      this.OR([
-        // Comparison operators
-        { ALT: () => this.CONSUME(NotEquals) },
-        { ALT: () => this.CONSUME(GreaterThanOrEqual) },
-        { ALT: () => this.CONSUME(LessThanOrEqual) },
-        { ALT: () => this.CONSUME(GreaterThan) },
-        { ALT: () => this.CONSUME(LessThan) },
-        { ALT: () => this.CONSUME(Equals) },
-        // Arithmetic operators
-        { ALT: () => this.CONSUME(Plus) },
-        { ALT: () => this.CONSUME(Minus) },
-        { ALT: () => this.CONSUME(Star) },
-        { ALT: () => this.CONSUME(Slash) },
-        { ALT: () => this.CONSUME(Percent) },
-      ])
-      this.SUBRULE2(this.expressionTerm)
-    })
-  })
+    // Function call or window function
+    if (this.check('IDENTIFIER') && this.peek() && this.peek()!.type === 'LPAREN') {
+      return this.parseFunctionOrWindow()
+    }
 
-  private expressionTerm = this.RULE('expressionTerm', () => {
-    this.OR([
-      {
-        // Unary minus or plus (for negative/positive numbers and expressions)
-        ALT: () => {
-          this.OR2([
-            { ALT: () => this.CONSUME(Minus) },
-            { ALT: () => this.CONSUME(Plus) },
-          ])
-          this.SUBRULE(this.expressionTerm)
-        },
-      },
-      {
-        // Regular identifier (with optional function call)
-        ALT: () => {
-          this.CONSUME2(Identifier)
-          this.OPTION(() => {
-            // Function call
-            this.CONSUME(LParen)
-            this.OPTION2(() => {
-              this.SUBRULE2(this.simpleExpression)
-              this.MANY(() => {
-                this.CONSUME(Comma)
-                this.SUBRULE3(this.simpleExpression)
-              })
-            })
-            this.CONSUME(RParen)
-          })
-        },
-      },
-      {
-        // Backtick identifier (with optional function call)
-        ALT: () => {
-          this.CONSUME(BacktickIdentifier)
-          this.OPTION3(() => {
-            // Function call
-            this.CONSUME2(LParen)
-            this.OPTION4(() => {
-              this.SUBRULE4(this.simpleExpression)
-              this.MANY2(() => {
-                this.CONSUME2(Comma)
-                this.SUBRULE5(this.simpleExpression)
-              })
-            })
-            this.CONSUME2(RParen)
-          })
-        },
-      },
-      {
-        // IF keyword as function name (for if() function)
-        ALT: () => {
-          this.CONSUME(If)
-          this.CONSUME3(LParen)
-          this.OPTION5(() => {
-            this.SUBRULE6(this.simpleExpression)
-            this.MANY3(() => {
-              this.CONSUME3(Comma)
-              this.SUBRULE7(this.simpleExpression)
-            })
-          })
-          this.CONSUME3(RParen)
-        },
-      },
-      { ALT: () => this.CONSUME(StringLiteral) },
-      { ALT: () => this.CONSUME(NumberLiteral) },
-      {
-        // Empty array literal []
-        ALT: () => {
-          this.CONSUME(LBracket)
-          this.CONSUME(RBracket)
-        },
-      },
-      {
-        // Tuple literal (val1, val2, ...)
-        ALT: () => {
-          this.CONSUME4(LParen)
-          this.SUBRULE8(this.simpleExpression)
-          this.AT_LEAST_ONE(() => {
-            this.CONSUME4(Comma)
-            this.SUBRULE9(this.simpleExpression)
-          })
-          this.CONSUME4(RParen)
-        },
-      },
-    ])
-  })
+    // Literals
+    if (this.check('NUMBER')) {
+      const value = parseFloat(this.current().value)
+      this.advance()
+      return { type: 'LITERAL', valueType: 'NUMBER', value }
+    }
 
-  private columns = this.RULE('columns', () => {
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.column) })
-  })
+    if (this.check('STRING')) {
+      const value = this.current().value
+      this.advance()
+      return { type: 'LITERAL', valueType: 'STRING', value }
+    }
 
-  private column = this.RULE('column', () => {
-    // Column name can be regular or backtick identifier
-    this.OR([
-      { ALT: () => this.CONSUME(Identifier) },
-      { ALT: () => this.CONSUME(BacktickIdentifier) },
-    ])
+    if (this.check('NULL')) {
+      this.advance()
+      return { type: 'LITERAL', valueType: 'NULL', value: null }
+    }
 
-    // Type is optional for ALIAS columns
-    this.OPTION(() => {
-      this.SUBRULE(this.type)
-    })
+    if (this.check('TRUE')) {
+      this.advance()
+      return { type: 'LITERAL', valueType: 'BOOLEAN', value: true }
+    }
 
-    // NULL keyword makes column nullable (alternative to Nullable(Type))
-    this.OPTION2(() => {
-      this.CONSUME(Null)
-    })
+    if (this.check('FALSE')) {
+      this.advance()
+      return { type: 'LITERAL', valueType: 'BOOLEAN', value: false }
+    }
 
-    this.OPTION3(() => {
-      this.CONSUME(Default)
-      this.SUBRULE1(this.simpleExpression)
-    })
-    this.OPTION4(() => {
-      this.CONSUME(Materialized)
-      this.SUBRULE2(this.simpleExpression)
-    })
-    this.OPTION5(() => {
-      this.CONSUME(Alias)
-      this.SUBRULE3(this.simpleExpression)
-    })
-    this.OPTION6(() => {
-      this.CONSUME(Comment)
-      this.CONSUME(StringLiteral)
-    })
-  })
+    // Parameter {name:Type}
+    if (this.check('PARAMETER')) {
+      const param = this.current().value
+      this.advance()
+      const match = param.match(/^\{([^:]+):(.+)\}$/)
+      if (match) {
+        return {
+          type: 'PARAMETER',
+          name: match[1],
+          dataType: match[2]
+        }
+      }
+    }
 
-  private type = this.RULE('type', () => {
-    this.OR([
-      { ALT: () => this.SUBRULE(this.nullableType) },
-      { ALT: () => this.CONSUME(UInt8) },
-      { ALT: () => this.CONSUME(UInt16) },
-      { ALT: () => this.CONSUME(UInt32) },
-      { ALT: () => this.CONSUME(UInt64) },
-      { ALT: () => this.CONSUME(Int8) },
-      { ALT: () => this.CONSUME(Int16) },
-      { ALT: () => this.CONSUME(Int32) },
-      { ALT: () => this.CONSUME(Int64) },
-      { ALT: () => this.CONSUME(Float32) },
-      { ALT: () => this.CONSUME(Float64) },
-      { ALT: () => this.SUBRULE(this.decimalType) },
-      { ALT: () => this.CONSUME(String) },
-      { ALT: () => this.CONSUME(Date32) },
-      { ALT: () => this.CONSUME(Date) },
-      { ALT: () => this.CONSUME(DateTime) },
-      { ALT: () => this.CONSUME(DateTime64) },
-      { ALT: () => this.CONSUME(UUID) },
-      { ALT: () => this.CONSUME(Bool) },
-      { ALT: () => this.CONSUME(IPv4) },
-      { ALT: () => this.CONSUME(IPv6) },
-      { ALT: () => this.CONSUME(JSONType) },
-      { ALT: () => this.SUBRULE(this.arrayType) },
-      { ALT: () => this.SUBRULE(this.tupleType) },
-      { ALT: () => this.SUBRULE(this.mapType) },
-      { ALT: () => this.SUBRULE(this.nestedType) },
-      { ALT: () => this.SUBRULE(this.lowCardinalityType) },
-      { ALT: () => this.SUBRULE(this.enumType) },
-      { ALT: () => this.SUBRULE(this.fixedStringType) },
-      { ALT: () => this.SUBRULE(this.aggregateFunctionType) },
-      { ALT: () => this.SUBRULE(this.simpleAggregateFunctionType) },
-      { ALT: () => this.CONSUME(Identifier) }, // fallback for other types
-    ])
-    this.OPTION(() => {
-      this.SUBRULE(this.typeParams)
-    })
-  })
+    // Array literal [1, 2, 3]
+    if (this.check('LBRACKET')) {
+      return this.parseArrayLiteral()
+    }
 
-  private nullableType = this.RULE('nullableType', () => {
-    this.CONSUME(Nullable)
-    this.CONSUME(LParen)
-    this.SUBRULE(this.type)
-    this.CONSUME(RParen)
-  })
+    // INTERVAL expression: INTERVAL 30 DAYS
+    if (this.check('INTERVAL')) {
+      return this.parseIntervalExpression()
+    }
 
-  private arrayType = this.RULE('arrayType', () => {
-    this.CONSUME(Array)
-    this.CONSUME(LParen)
-    this.SUBRULE(this.type)
-    this.CONSUME(RParen)
-  })
+    // Column reference
+    return this.parseColumnRef()
+  }
 
-  private tupleType = this.RULE('tupleType', () => {
-    this.CONSUME(Tuple)
-    this.CONSUME(LParen)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.type) })
-    this.CONSUME(RParen)
-  })
+  private parseIntervalExpression(): FunctionCall {
+    this.expect('INTERVAL')
+    // Parse just the numeric value (don't parse full expression)
+    const value = this.parsePrimaryExpression()
+    // The unit (DAYS, HOURS, etc.) is parsed as an identifier
+    const unit = this.check('IDENTIFIER') ? this.expectIdentifier() : undefined
 
-  private mapType = this.RULE('mapType', () => {
-    this.CONSUME(Map)
-    this.CONSUME(LParen)
-    this.SUBRULE1(this.type) // key type
-    this.CONSUME(Comma)
-    this.SUBRULE2(this.type) // value type
-    this.CONSUME(RParen)
-  })
+    return {
+      type: 'FUNCTION_CALL',
+      name: 'INTERVAL',
+      args: unit
+        ? [value, { type: 'LITERAL', valueType: 'STRING', value: unit }]
+        : [value]
+    }
+  }
 
-  private nestedType = this.RULE('nestedType', () => {
-    this.CONSUME(Nested)
-    this.CONSUME(LParen)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.nestedField) })
-    this.CONSUME(RParen)
-  })
+  private parseCast(): FunctionCall {
+    this.expect('CAST')
+    this.expect('LPAREN')
+    const expr = this.parseOrExpression()
+    this.expect('AS')
+    const targetType = this.parseType()
+    this.expect('RPAREN')
 
-  private nestedField = this.RULE('nestedField', () => {
-    // Field name can be regular or backtick identifier
-    this.OR([
-      { ALT: () => this.CONSUME(Identifier) },
-      { ALT: () => this.CONSUME(BacktickIdentifier) },
-    ])
-    this.SUBRULE(this.type)
-  })
+    return {
+      type: 'FUNCTION_CALL',
+      name: 'CAST',
+      args: [expr, { type: 'LITERAL', valueType: 'STRING', value: targetType }]
+    }
+  }
 
-  private lowCardinalityType = this.RULE('lowCardinalityType', () => {
-    this.CONSUME(LowCardinality)
-    this.CONSUME(LParen)
-    this.SUBRULE(this.type)
-    this.CONSUME(RParen)
-  })
+  private parseFunctionOrWindow(): FunctionCall | WindowFunction {
+    const name = this.expectIdentifier()
+    this.expect('LPAREN')
 
-  private enumType = this.RULE('enumType', () => {
-    this.OR([
-      { ALT: () => this.CONSUME(Enum8) },
-      { ALT: () => this.CONSUME(Enum16) },
-    ])
-    this.CONSUME(LParen)
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.enumValue) })
-    this.CONSUME(RParen)
-  })
+    const args: Expression[] = []
 
-  private enumValue = this.RULE('enumValue', () => {
-    this.CONSUME(StringLiteral)
-    this.CONSUME(Equals)
-    this.CONSUME(NumberLiteral)
-  })
+    // Handle COUNT(*), SUM(*), etc.
+    if (this.check('STAR')) {
+      this.advance()
+      args.push({ type: 'COLUMN', name: '*' })
+    } else if (!this.check('RPAREN')) {
+      // Parse arguments - any expressions, not just simple columns
+      do {
+        // Check for lambda function: identifier -> expression or (params) -> expression
+        if (this.isLambdaFunction()) {
+          args.push(this.parseLambdaFunction())
+        } else {
+          args.push(this.parseOrExpression())
+        }
+      } while (this.match('COMMA'))
+    }
 
-  private fixedStringType = this.RULE('fixedStringType', () => {
-    this.CONSUME(FixedString)
-    this.CONSUME(LParen)
-    this.CONSUME(NumberLiteral)
-    this.CONSUME(RParen)
-  })
+    this.expect('RPAREN')
 
-  private decimalType = this.RULE('decimalType', () => {
-    this.CONSUME(Decimal)
-    this.CONSUME(LParen)
-    this.CONSUME(NumberLiteral) // precision
-    this.CONSUME(Comma)
-    this.CONSUME2(NumberLiteral) // scale
-    this.CONSUME(RParen)
-  })
+    // Check for OVER clause (window function)
+    if (this.check('OVER')) {
+      return this.parseWindowFunction(name, args)
+    }
 
-  private aggregateFunctionType = this.RULE('aggregateFunctionType', () => {
-    this.CONSUME(AggregateFunction)
-    this.CONSUME(LParen)
-    this.CONSUME(Identifier) // function name (sum, avg, etc.)
-    this.CONSUME(Comma)
-    this.SUBRULE(this.type) // inner type
-    this.CONSUME(RParen)
-  })
+    return {
+      type: 'FUNCTION_CALL',
+      name,
+      args
+    }
+  }
 
-  private simpleAggregateFunctionType = this.RULE('simpleAggregateFunctionType', () => {
-    this.CONSUME(SimpleAggregateFunction)
-    this.CONSUME(LParen)
-    this.CONSUME(Identifier) // function name (sum, avg, max, min, etc.)
-    this.CONSUME(Comma)
-    this.SUBRULE(this.type) // inner type
-    this.CONSUME(RParen)
-  })
+  private parseWindowFunction(name: string, args: Expression[]): WindowFunction {
+    this.expect('OVER')
+    this.expect('LPAREN')
 
-  private typeParams = this.RULE('typeParams', () => {
-    this.CONSUME(LParen) // type start paren
-    this.AT_LEAST_ONE_SEP({ SEP: Comma, DEF: () => this.SUBRULE(this.simpleExpression) })
-    this.CONSUME(RParen) // type end paren
-  })
+    let partitionBy: Expression[] | undefined
+    if (this.check('PARTITION')) {
+      this.advance()
+      this.expect('BY')
+      partitionBy = []
+
+      // Check for optional parentheses
+      const hasParens = this.match('LPAREN')
+
+      do {
+        partitionBy.push(this.parseOrExpression())
+      } while (this.match('COMMA'))
+
+      if (hasParens) {
+        this.expect('RPAREN')
+      }
+    }
+
+    let orderBy: OrderByItem[] | undefined
+    if (this.check('ORDER')) {
+      this.advance()
+      this.expect('BY')
+      orderBy = []
+
+      // Check for optional parentheses
+      const hasParens = this.match('LPAREN')
+
+      do {
+        const expression = this.parseOrExpression()
+        let direction: 'ASC' | 'DESC' | undefined
+        if (this.check('ASC')) {
+          this.advance()
+          direction = 'ASC'
+        } else if (this.check('DESC')) {
+          this.advance()
+          direction = 'DESC'
+        }
+        orderBy.push({ expression, direction })
+      } while (this.match('COMMA'))
+
+      if (hasParens) {
+        this.expect('RPAREN')
+      }
+    }
+
+    this.expect('RPAREN')
+
+    return {
+      type: 'WINDOW_FUNCTION',
+      name,
+      args,
+      over: { partitionBy, orderBy }
+    }
+  }
+
+  private parseArrayLiteral(): ArrayLiteral {
+    this.expect('LBRACKET')
+    const elements: Expression[] = []
+
+    if (!this.check('RBRACKET')) {
+      do {
+        elements.push(this.parseOrExpression())
+      } while (this.match('COMMA'))
+    }
+
+    this.expect('RBRACKET')
+    return { type: 'ARRAY_LITERAL', elements }
+  }
+
+  private parseColumnRef(): ColumnRef {
+    const name = this.expectIdentifier()
+
+    // Qualified name: table.column, tuple element access (t.1), or qualified wildcard (t.*)
+    if (this.check('DOT')) {
+      this.advance()
+
+      // Handle tuple element access (e.g., t.1, t.2)
+      if (this.check('NUMBER')) {
+        const tupleIndex = this.current().value
+        this.advance()
+        return { type: 'COLUMN', table: name, name: tupleIndex.toString() }
+      }
+
+      // Handle qualified wildcard (e.g., t.*)
+      if (this.check('STAR')) {
+        this.advance()
+        return { type: 'COLUMN', table: name, name: '*' }
+      }
+
+      // Regular column name
+      const columnName = this.expectIdentifier()
+      return { type: 'COLUMN', table: name, name: columnName }
+    }
+
+    return { type: 'COLUMN', name }
+  }
+
+  private parseFromClause(): FromClause {
+    this.expect('FROM')
+    const table = this.parseTableRef()
+
+    // Check for ARRAY JOIN
+    let arrayJoin: ArrayJoinClause | undefined
+    if (this.check('ARRAY')) {
+      this.advance()
+      this.expect('JOIN')
+
+      const array = this.parseOrExpression()
+
+      let alias: string | undefined
+      if (this.check('AS')) {
+        this.advance()
+        alias = this.expectIdentifier()
+      } else if (this.check('IDENTIFIER') && !this.isReservedKeyword(this.current().value)) {
+        alias = this.expectIdentifier()
+      }
+
+      arrayJoin = {
+        type: 'ARRAY_JOIN',
+        array,
+        alias
+      }
+    }
+
+    return { type: 'FROM', table, arrayJoin }
+  }
+
+  private parseTableRef(): TableRef | SubqueryRef {
+    // Check for subquery: (SELECT ...)
+    if (this.check('LPAREN')) {
+      this.advance() // consume LPAREN
+      const query = this.parseSelect()
+      this.expect('RPAREN')
+
+      // Optional alias
+      let alias: string | undefined
+      if (this.check('AS')) {
+        this.advance()
+        alias = this.expectIdentifier()
+      } else if (this.check('IDENTIFIER') && !this.isReservedKeyword(this.current().value)) {
+        alias = this.expectIdentifier()
+      }
+
+      return {
+        type: 'SUBQUERY_TABLE',
+        query,
+        alias
+      }
+    }
+
+    // Regular table reference
+    const name = this.expectIdentifier()
+
+    let database: string | undefined
+    let tableName = name
+
+    // Qualified name: database.table
+    if (this.check('DOT')) {
+      this.advance()
+      database = name
+      tableName = this.expectIdentifier()
+    }
+
+    // Optional alias
+    let alias: string | undefined
+    if (this.check('AS')) {
+      this.advance()
+      alias = this.expectIdentifier()
+    } else if (this.check('IDENTIFIER') && !this.isReservedKeyword(this.current().value)) {
+      alias = this.expectIdentifier()
+    }
+
+    return {
+      type: 'TABLE',
+      database,
+      name: tableName,
+      alias
+    }
+  }
+
+  private parseWhereClause(): Expression {
+    this.expect('WHERE')
+    return this.parseOrExpression()
+  }
+
+  // ========== LAMBDA FUNCTIONS ==========
+
+  private isLambdaFunction(): boolean {
+    // Lambda patterns:
+    // 1. identifier -> expression (e.g., x -> x + 1)
+    // 2. (identifier, identifier, ...) -> expression
+
+    const savePos = this.pos
+
+    try {
+      // Check for parenthesized parameter list
+      if (this.check('LPAREN')) {
+        this.advance()
+        // Skip identifiers and commas
+        while (this.check('IDENTIFIER') || this.check('COMMA')) {
+          this.advance()
+        }
+        if (!this.check('RPAREN')) {
+          return false
+        }
+        this.advance()
+        return this.check('ARROW')
+      }
+
+      // Check for single identifier followed by arrow
+      if (this.check('IDENTIFIER')) {
+        this.advance()
+        return this.check('ARROW')
+      }
+
+      return false
+    } finally {
+      // Restore position
+      this.pos = savePos
+    }
+  }
+
+  private parseLambdaFunction(): Literal {
+    // Capture lambda as a string literal for simplicity
+    let lambda = ''
+
+    // Parse parameters
+    if (this.check('LPAREN')) {
+      lambda += '('
+      this.advance()
+      while (!this.check('RPAREN')) {
+        lambda += this.current().value
+        this.advance()
+      }
+      lambda += ')'
+      this.advance()
+    } else {
+      lambda += this.current().value
+      this.advance()
+    }
+
+    // Parse arrow
+    lambda += ' -> '
+    this.expect('ARROW')
+
+    // Parse body - capture until comma or closing paren
+    let depth = 0
+    while (this.pos < this.tokens.length) {
+      const token = this.current()
+
+      if (token.type === 'LPAREN') depth++
+      if (token.type === 'RPAREN') {
+        if (depth === 0) break
+        depth--
+      }
+      if (depth === 0 && token.type === 'COMMA') break
+
+      lambda += token.value
+      this.advance()
+    }
+
+    return {
+      type: 'LITERAL',
+      valueType: 'STRING',
+      value: lambda.trim()
+    }
+  }
+
+  // ========== UTILITY METHODS ==========
+
+  private captureParenthesized(): string {
+    let depth = 0
+    let result = ''
+    let prevToken: Token | null = null
+
+    while (this.pos < this.tokens.length) {
+      const token = this.current()
+
+      if (token.type === 'LPAREN') {
+        depth++
+        result += token.value
+        this.advance()
+        prevToken = token
+      } else if (token.type === 'RPAREN') {
+        depth--
+        result += token.value
+        this.advance()
+        prevToken = token
+        if (depth === 0) break
+      } else {
+        // Add space only between consecutive identifiers (like "key String" in Nested types)
+        if (prevToken && prevToken.type === 'IDENTIFIER' && token.type === 'IDENTIFIER') {
+          result += ' '
+        }
+        // Preserve quotes around string literals
+        if (token.type === 'STRING') {
+          result += `'${token.value}'`
+        } else {
+          result += token.value
+        }
+        this.advance()
+        prevToken = token
+      }
+    }
+
+    return result
+  }
+
+  private captureExpression(): string {
+    let depth = 0
+    let expr = ''
+    let prevToken: Token | null = null
+
+    while (this.pos < this.tokens.length) {
+      const token = this.current()
+
+      if (token.type === 'LPAREN') depth++
+      if (token.type === 'RPAREN') {
+        if (depth === 0) break
+        depth--
+      }
+      if (depth === 0 && token.type === 'COMMA') break
+
+      // Add space before token based on context
+      if (prevToken && this.needsSpaceBetween(prevToken, token)) {
+        expr += ' '
+      }
+
+      // Preserve quotes around string literals
+      if (token.type === 'STRING') {
+        expr += `'${token.value}'`
+      } else {
+        expr += token.value
+      }
+
+      prevToken = token
+      this.advance()
+    }
+
+    return expr.trim()
+  }
+
+  private needsSpaceBetween(prev: Token, curr: Token): boolean {
+    const prevType = prev.type
+    const currType = curr.type
+
+    // No space after opening parenthesis or before closing parenthesis
+    if (prevType === 'LPAREN' || currType === 'RPAREN') return false
+
+    // No space around dots
+    if (prevType === 'DOT' || currType === 'DOT') return false
+
+    // No space after unary operators (+ or -)
+    if ((prevType === 'PLUS' || prevType === 'MINUS') && currType === 'NUMBER') {
+      return false
+    }
+
+    // Space after comma
+    if (prevType === 'COMMA') return true
+
+    // Space around binary operators (except when they follow LPAREN, already handled above)
+    const operatorTypes: TokenType[] = ['PLUS', 'MINUS', 'STAR', 'SLASH', 'PERCENT', 'EQ', 'NEQ', 'NEQ2', 'LT', 'GT', 'LTE', 'GTE']
+    if (operatorTypes.includes(prevType) || operatorTypes.includes(currType)) {
+      return true
+    }
+
+    // Space between identifiers
+    if (prevType === 'IDENTIFIER' && currType === 'IDENTIFIER') return true
+
+    // Default: no space
+    return false
+  }
+
+  private captureUntilCommaOrKeyword(): string {
+    const keywords = ['SETTINGS', 'ORDER', 'PARTITION', 'EOF', 'SEMICOLON', 'RPAREN']
+    let result = ''
+    let depth = 0
+    let prevToken: Token | null = null
+
+    while (this.pos < this.tokens.length) {
+      const token = this.current()
+
+      // Stop at comma or keyword, but only at depth 0
+      if (depth === 0) {
+        if (token.type === 'COMMA' || keywords.includes(token.type)) break
+      }
+
+      // Track parenthesis depth AFTER checking whether to stop
+      if (token.type === 'LPAREN') depth++
+
+      // Add space if needed
+      if (prevToken && this.needsSpaceBetween(prevToken, token)) {
+        result += ' '
+      }
+
+      // Preserve quotes around strings
+      if (token.type === 'STRING') {
+        result += `'${token.value}'`
+      } else {
+        result += token.value
+      }
+
+      prevToken = token
+      this.advance()
+
+      // Decrement depth AFTER adding the closing paren to result
+      if (token.type === 'RPAREN') depth--
+    }
+
+    return result.trim()
+  }
+
+  private captureUntilKeyword(): string {
+    const keywords = ['SETTINGS', 'ORDER', 'EOF', 'SEMICOLON']
+    let result = ''
+
+    while (this.pos < this.tokens.length) {
+      const token = this.current()
+      if (keywords.includes(token.type)) break
+
+      result += token.value
+      this.advance()
+    }
+
+    return result.trim()
+  }
+
+  private captureRemaining(): string {
+    let result = ''
+
+    while (!this.check('EOF') && !this.check('SEMICOLON')) {
+      result += this.current().value + ' '
+      this.advance()
+    }
+
+    return result.trim()
+  }
+
+  private isReservedKeyword(word: string): boolean {
+    const reserved = ['FROM', 'WHERE', 'AND', 'OR', 'IN', 'LIKE', 'AS', 'ORDER', 'BY', 'PARTITION', 'OVER', 'WITH']
+    return reserved.includes(word.toUpperCase())
+  }
+
+  // ========== TOKEN HELPERS ==========
+
+  private current(): Token {
+    return this.tokens[this.pos]
+  }
+
+  private peek(): Token | undefined {
+    return this.tokens[this.pos + 1]
+  }
+
+  private check(type: TokenType): boolean {
+    return this.current().type === type
+  }
+
+  private advance(): Token {
+    const token = this.current()
+    this.pos++
+    return token
+  }
+
+  private match(type: TokenType): boolean {
+    if (this.check(type)) {
+      this.advance()
+      return true
+    }
+    return false
+  }
+
+  private expect(type: TokenType): Token {
+    const token = this.current()
+    if (token.type !== type) {
+      throw new ParseError(
+        `Expected ${type} but got ${token.type} ("${token.value}") at line ${token.line}, col ${token.col}`,
+        token
+      )
+    }
+    return this.advance()
+  }
+
+  private expectIdentifier(): string {
+    const token = this.expect('IDENTIFIER')
+    return token.value
+  }
+
+  // Allow reserved keywords to be used as identifiers (e.g., table name "table")
+  private expectIdentifierOrKeyword(): string {
+    const token = this.current()
+    if (token.type === 'IDENTIFIER') {
+      return this.advance().value
+    }
+    // Allow certain keywords as identifiers
+    const allowedKeywords = ['TABLE', 'VIEW', 'DATABASE', 'COLUMN', 'INDEX', 'KEY', 'PARTITION', 'ORDER', 'BY']
+    if (allowedKeywords.includes(token.type)) {
+      return this.advance().value
+    }
+    throw new ParseError(
+      `Expected IDENTIFIER but got ${token.type} ("${token.value}") at line ${token.line}, col ${token.col}`,
+      token
+    )
+  }
 }
 
-const parser = new ClickHouseParser()
+// ========== PUBLIC API ==========
 
 export function parseStatement(sql: string): DDLStatement {
-  const lexResult = ClickHouseLexer.tokenize(sql)
-  parser.input = lexResult.tokens
-  const cst = parser.root()
-  if (parser.errors.length > 0) {
-    throw new Error('Parse errors: ' + JSON.stringify(parser.errors, null, 2))
-  }
-
-  // Check if it's a CREATE TABLE, CREATE VIEW, or CREATE MATERIALIZED VIEW statement
-  if ((cst.children as any).createTable) {
-    const create = (cst.children as any).createTable[0]
-    const table = parseCreateTable(create)
-    return { type: 'CREATE_TABLE', table }
-  } else if ((cst.children as any).createMaterializedView) {
-    const create = (cst.children as any).createMaterializedView[0]
-    const materializedView = parseCreateMaterializedView(create)
-    return { type: 'CREATE_MATERIALIZED_VIEW', materializedView }
-  } else if ((cst.children as any).createView) {
-    const create = (cst.children as any).createView[0]
-    const view = parseCreateView(create)
-    return { type: 'CREATE_VIEW', view }
-  } else {
-    throw new Error('Unknown statement type')
-  }
+  const lexer = new Lexer(sql)
+  const tokens = lexer.tokenize()
+  const parser = new Parser(tokens)
+  return parser.parse()
 }
 
-// Backwards compatible function - returns just the table
 export function parse(sql: string): DDLTable {
   const result = parseStatement(sql)
   if (result.type === 'CREATE_TABLE' && result.table) {
     return result.table
   }
   throw new Error('Expected CREATE TABLE statement')
-}
-
-function parseCreateTable(create: any): DDLTable {
-  
-  // Handle qualified table names (schema.table or just table)
-  const qualifiedTableName = create.children.qualifiedTableName[0]
-  const identifierTokens = findTokensOfType(qualifiedTableName, 'Identifier')
-  const backtickTokens = findTokensOfType(qualifiedTableName, 'BacktickIdentifier')
-  const tableTokens = findTokensOfType(qualifiedTableName, 'Table')
-
-  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
-  const allIdentifiers = [...identifierTokens, ...backtickTokens].sort((a, b) => a.startOffset - b.startOffset)
-
-  let tableName: string
-  if (allIdentifiers.length === 2) {
-    // schema.table format with two identifiers
-    tableName = `${extractIdentifierValue(allIdentifiers[0])}.${extractIdentifierValue(allIdentifiers[1])}`
-  } else if (allIdentifiers.length === 1 && tableTokens.length === 1) {
-    // schema.table format with identifier and table keyword
-    tableName = `${extractIdentifierValue(allIdentifiers[0])}.${tableTokens[0].image}`
-  } else if (tableTokens.length === 2) {
-    // schema.table format with both table keywords
-    tableName = `${tableTokens[0].image}.${tableTokens[1].image}`
-  } else if (allIdentifiers.length === 1 && tableTokens.length === 0) {
-    // just table name as identifier
-    tableName = extractIdentifierValue(allIdentifiers[0])
-  } else if (tableTokens.length === 1 && allIdentifiers.length === 0) {
-    // just table name as table keyword
-    tableName = tableTokens[0].image
-  } else {
-    // fallback
-    tableName = allIdentifiers[0] ? extractIdentifierValue(allIdentifiers[0]) : (tableTokens[0]?.image || 'unknown')
-  }
-
-  const columnNodes = (create.children.columns[0].children as any).column
-  const columns: DDLColumn[] = columnNodes.map((colNode: any) => {
-    const nameTok = findIdentifierToken(colNode) as IToken
-    const name = extractIdentifierValue(nameTok)
-    let type = 'unknown'
-    let nullable = false
-    let def: string | undefined
-    let materialized: string | undefined
-    let alias: string | undefined
-    let comment: string | undefined
-
-    // Parse type - extract from type node
-    if (colNode.children.type) {
-      const typeNode = colNode.children.type[0]
-      const typeResult = extractType(typeNode)
-      type = typeResult.type
-      nullable = typeResult.nullable
-    }
-
-    // Check for NULL keyword (alternative to Nullable)
-    if (colNode.children.Null) {
-      nullable = true
-    }
-
-    // Parse default value
-    if (colNode.children.Default) {
-      def = extractExpression(colNode.children.simpleExpression[0])
-    }
-
-    // Parse materialized
-    if (colNode.children.Materialized) {
-      //const materializedIdx = Object.keys(colNode.children).indexOf('Materialized')
-      //const simpleExpIdx = Object.keys(colNode.children).indexOf('simpleExpression')
-      // Find the simpleExpression that comes after Materialized
-      const simpleExpNodes = colNode.children.simpleExpression || []
-      for (let i = 0; i < simpleExpNodes.length; i++) {
-        const expr = extractExpression(simpleExpNodes[i])
-        if (!def || i > 0) {
-          materialized = expr
-          break
-        }
-      }
-    }
-
-    // Parse alias
-    if (colNode.children.Alias) {
-      const simpleExpNodes = colNode.children.simpleExpression || []
-      // The last simpleExpression should be the alias expression
-      if (simpleExpNodes.length > 0) {
-        alias = extractExpression(simpleExpNodes[simpleExpNodes.length - 1])
-      }
-    }
-
-    // Parse comment
-    if (colNode.children.Comment) {
-      const stringLiterals = findTokensOfType(colNode, 'StringLiteral')
-      // Comment string literal is the last one (or the only one if no default)
-      if (stringLiterals.length > 0) {
-        const commentLiteral = stringLiterals[stringLiterals.length - 1].image
-        // Strip quotes
-        comment = commentLiteral.slice(1, -1)
-      }
-    }
-
-    return { name, type, nullable, default: def, materialized, alias, comment }
-  })
-
-  // Parse table options
-  let engine: string | undefined
-  let orderBy: string[] | undefined
-  let partitionBy: string | undefined
-  let settings: Record<string, string> | undefined
-
-  if (create.children.engineClause) {
-    const engineClause = create.children.engineClause[0]
-    const engineTok = findTokenOfType(engineClause, 'Identifier') as IToken
-    engine = engineTok.image
-  }
-
-  if (create.children.orderByClause) {
-    const orderByClause = create.children.orderByClause[0]
-    const orderByTokens = findTokensOfType(orderByClause, 'Identifier')
-    orderBy = orderByTokens.map(t => t.image)
-  }
-
-  if (create.children.partitionByClause) {
-    const partitionByClause = create.children.partitionByClause[0]
-    partitionBy = extractExpression(partitionByClause)
-  }
-
-  if (create.children.settingsClause) {
-    const settingsClause = create.children.settingsClause[0]
-    settings = {}
-    const settingNodes = settingsClause.children.setting || []
-    for (const settingNode of settingNodes) {
-      const identifiers = findTokensOfType(settingNode, 'Identifier')
-      const expressions = settingNode.children.simpleExpression || []
-      if (identifiers.length > 0 && expressions.length > 0) {
-        const key = identifiers[0].image
-        const value = extractExpression(expressions[0])
-        settings[key] = value
-      }
-    }
-  }
-
-  return { name: tableName, columns, engine, orderBy, partitionBy, settings }
-}
-
-function parseCreateView(create: any): DDLView {
-  // Handle qualified view names (schema.view or just view)
-  const qualifiedTableName = create.children.qualifiedTableName[0]
-  const identifierTokens = findTokensOfType(qualifiedTableName, 'Identifier')
-  const backtickTokens = findTokensOfType(qualifiedTableName, 'BacktickIdentifier')
-  const tableTokens = findTokensOfType(qualifiedTableName, 'Table')
-
-  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
-  const allIdentifiers = [...identifierTokens, ...backtickTokens].sort((a, b) => a.startOffset - b.startOffset)
-
-  let viewName: string
-  if (allIdentifiers.length === 2) {
-    // schema.view format with two identifiers
-    viewName = `${extractIdentifierValue(allIdentifiers[0])}.${extractIdentifierValue(allIdentifiers[1])}`
-  } else if (allIdentifiers.length === 1 && tableTokens.length === 1) {
-    // schema.view format with identifier and table keyword
-    viewName = `${extractIdentifierValue(allIdentifiers[0])}.${tableTokens[0].image}`
-  } else if (tableTokens.length === 2) {
-    // schema.view format with both table keywords
-    viewName = `${tableTokens[0].image}.${tableTokens[1].image}`
-  } else if (allIdentifiers.length === 1 && tableTokens.length === 0) {
-    // just view name as identifier
-    viewName = extractIdentifierValue(allIdentifiers[0])
-  } else if (tableTokens.length === 1 && allIdentifiers.length === 0) {
-    // just view name as table keyword
-    viewName = tableTokens[0].image
-  } else {
-    // fallback
-    viewName = allIdentifiers[0] ? extractIdentifierValue(allIdentifiers[0]) : (tableTokens[0]?.image || 'unknown')
-  }
-
-  // Extract the SELECT query from the selectQuery node
-  const selectQueryNode = create.children.selectQuery[0]
-
-  // Try to build AST (returns undefined if parsing fell back to string mode)
-  const selectAST = extractSelectStatement(selectQueryNode)
-
-  // Build AST - fail hard if extraction fails (no string fallback)
-  if (!selectAST) {
-    throw new Error(`Failed to extract SELECT AST for view: ${viewName}`)
-  }
-
-  return {
-    name: viewName,
-    select: selectAST  // Pure AST, required field
-  }
-}
-
-function parseCreateMaterializedView(create: any): DDLMaterializedView {
-  // Handle qualified view names (schema.view or just view)
-  const qualifiedTableNames = create.children.qualifiedTableName
-
-  // First qualifiedTableName is the view name
-  const viewNameNode = qualifiedTableNames[0]
-  const viewIdentifierTokens = findTokensOfType(viewNameNode, 'Identifier')
-  const viewBacktickTokens = findTokensOfType(viewNameNode, 'BacktickIdentifier')
-  const viewTableTokens = findTokensOfType(viewNameNode, 'Table')
-
-  // Combine all identifier-like tokens (Identifier, BacktickIdentifier) and sort by position
-  const viewAllIdentifiers = [...viewIdentifierTokens, ...viewBacktickTokens].sort((a, b) => a.startOffset - b.startOffset)
-
-  let viewName: string
-  if (viewAllIdentifiers.length === 2) {
-    viewName = `${extractIdentifierValue(viewAllIdentifiers[0])}.${extractIdentifierValue(viewAllIdentifiers[1])}`
-  } else if (viewAllIdentifiers.length === 1 && viewTableTokens.length === 1) {
-    viewName = `${extractIdentifierValue(viewAllIdentifiers[0])}.${viewTableTokens[0].image}`
-  } else if (viewTableTokens.length === 2) {
-    viewName = `${viewTableTokens[0].image}.${viewTableTokens[1].image}`
-  } else if (viewAllIdentifiers.length === 1 && viewTableTokens.length === 0) {
-    viewName = extractIdentifierValue(viewAllIdentifiers[0])
-  } else if (viewTableTokens.length === 1 && viewAllIdentifiers.length === 0) {
-    viewName = viewTableTokens[0].image
-  } else {
-    viewName = viewAllIdentifiers[0] ? extractIdentifierValue(viewAllIdentifiers[0]) : (viewTableTokens[0]?.image || 'unknown')
-  }
-
-  // Second qualifiedTableName is the target table name
-  const toTableNode = qualifiedTableNames[1]
-  const toIdentifierTokens = findTokensOfType(toTableNode, 'Identifier')
-  const toBacktickTokens = findTokensOfType(toTableNode, 'BacktickIdentifier')
-  const toTableTokens = findTokensOfType(toTableNode, 'Table')
-
-  const toAllIdentifiers = [...toIdentifierTokens, ...toBacktickTokens].sort((a, b) => a.startOffset - b.startOffset)
-
-  let toTable: string
-  if (toAllIdentifiers.length === 2) {
-    toTable = `${extractIdentifierValue(toAllIdentifiers[0])}.${extractIdentifierValue(toAllIdentifiers[1])}`
-  } else if (toAllIdentifiers.length === 1 && toTableTokens.length === 1) {
-    toTable = `${extractIdentifierValue(toAllIdentifiers[0])}.${toTableTokens[0].image}`
-  } else if (toTableTokens.length === 2) {
-    toTable = `${toTableTokens[0].image}.${toTableTokens[1].image}`
-  } else if (toAllIdentifiers.length === 1 && toTableTokens.length === 0) {
-    toTable = extractIdentifierValue(toAllIdentifiers[0])
-  } else if (toTableTokens.length === 1 && toAllIdentifiers.length === 0) {
-    toTable = toTableTokens[0].image
-  } else {
-    toTable = toAllIdentifiers[0] ? extractIdentifierValue(toAllIdentifiers[0]) : (toTableTokens[0]?.image || 'unknown')
-  }
-
-  // Optional: Parse column definitions (system.tables format)
-  let columns: DDLColumn[] | undefined
-  if (create.children.columns) {
-    const columnNodes = (create.children.columns[0].children as any).column
-    columns = columnNodes.map((colNode: any) => {
-      const nameTok = findIdentifierToken(colNode) as IToken
-      const name = extractIdentifierValue(nameTok)
-      let type = 'unknown'
-      let nullable = false
-      let def: string | undefined
-      let materialized: string | undefined
-      let alias: string | undefined
-      let comment: string | undefined
-
-      // Parse type - extract from type node
-      if (colNode.children.type) {
-        const typeNode = colNode.children.type[0]
-        const typeResult = extractType(typeNode)
-        type = typeResult.type
-        nullable = typeResult.nullable
-      }
-
-      // Check for NULL keyword (alternative to Nullable)
-      if (colNode.children.Null) {
-        nullable = true
-      }
-
-      // Parse default value
-      if (colNode.children.Default) {
-        def = extractExpression(colNode.children.simpleExpression[0])
-      }
-
-      // Parse materialized
-      if (colNode.children.Materialized) {
-        const simpleExpNodes = colNode.children.simpleExpression || []
-        for (let i = 0; i < simpleExpNodes.length; i++) {
-          const expr = extractExpression(simpleExpNodes[i])
-          if (!def || i > 0) {
-            materialized = expr
-            break
-          }
-        }
-      }
-
-      // Parse alias
-      if (colNode.children.Alias) {
-        const simpleExpNodes = colNode.children.simpleExpression || []
-        if (simpleExpNodes.length > 0) {
-          alias = extractExpression(simpleExpNodes[simpleExpNodes.length - 1])
-        }
-      }
-
-      // Parse comment
-      if (colNode.children.Comment) {
-        const stringLiterals = findTokensOfType(colNode, 'StringLiteral')
-        if (stringLiterals.length > 0) {
-          const commentLiteral = stringLiterals[stringLiterals.length - 1].image
-          comment = commentLiteral.slice(1, -1)
-        }
-      }
-
-      return { name, type, nullable, default: def, materialized, alias, comment }
-    })
-  }
-
-  // Optional: Extract the SELECT query from the selectQuery node
-  let selectQuery: string | undefined
-  if (create.children.selectQuery && create.children.selectQuery[0]) {
-    const selectQueryNode = create.children.selectQuery[0]
-    selectQuery = flattenTokens(selectQueryNode).map(t => t.image).join(' ')
-  }
-
-  return { name: viewName, toTable, columns, selectQuery }
-}
-
-function extractType(typeNode: any): { type: string; nullable: boolean } {
-  let nullable = false
-  let type = 'unknown'
-
-  // Check if it's a nullable type
-  if (typeNode.children.nullableType) {
-    nullable = true
-    const innerTypeNode = typeNode.children.nullableType[0].children.type[0]
-    return { type: extractType(innerTypeNode).type, nullable: true }
-  }
-
-  // Check for complex types
-  if (typeNode.children.arrayType) {
-    const arrayNode = typeNode.children.arrayType[0]
-    const innerType = extractType(arrayNode.children.type[0]).type
-    return { type: `Array(${innerType})`, nullable }
-  }
-
-  if (typeNode.children.tupleType) {
-    const tupleNode = typeNode.children.tupleType[0]
-    const types = tupleNode.children.type.map((t: any) => extractType(t).type)
-    return { type: `Tuple(${types.join(', ')})`, nullable }
-  }
-
-  if (typeNode.children.mapType) {
-    const mapNode = typeNode.children.mapType[0]
-    const keyType = extractType(mapNode.children.type[0]).type
-    const valueType = extractType(mapNode.children.type[1]).type
-    return { type: `Map(${keyType}, ${valueType})`, nullable }
-  }
-
-  if (typeNode.children.nestedType) {
-    const nestedNode = typeNode.children.nestedType[0]
-    const fields = nestedNode.children.nestedField.map((f: any) => {
-      const fieldToken = findIdentifierToken(f)
-      const fieldName = fieldToken ? extractIdentifierValue(fieldToken) : ''
-      const fieldType = extractType(f.children.type[0]).type
-      return `${fieldName} ${fieldType}`
-    })
-    return { type: `Nested(${fields.join(', ')})`, nullable }
-  }
-
-  if (typeNode.children.lowCardinalityType) {
-    const lcNode = typeNode.children.lowCardinalityType[0]
-    const innerType = extractType(lcNode.children.type[0]).type
-    return { type: `LowCardinality(${innerType})`, nullable }
-  }
-
-  if (typeNode.children.enumType) {
-    const enumNode = typeNode.children.enumType[0]
-    const enumKind = enumNode.children.Enum8 ? 'Enum8' : 'Enum16'
-    const enumValues = enumNode.children.enumValue.map((ev: any) => {
-      const stringLit = findTokenOfType(ev, 'StringLiteral')?.image || ''
-      const numLit = findTokenOfType(ev, 'NumberLiteral')?.image || ''
-      return `${stringLit} = ${numLit}`
-    })
-    return { type: `${enumKind}(${enumValues.join(', ')})`, nullable }
-  }
-
-  if (typeNode.children.fixedStringType) {
-    const fsNode = typeNode.children.fixedStringType[0]
-    const size = findTokenOfType(fsNode, 'NumberLiteral')?.image || ''
-    return { type: `FixedString(${size})`, nullable }
-  }
-
-  if (typeNode.children.decimalType) {
-    const decNode = typeNode.children.decimalType[0]
-    const numbers = findTokensOfType(decNode, 'NumberLiteral')
-    const precision = numbers[0]?.image || ''
-    const scale = numbers[1]?.image || ''
-    return { type: `Decimal(${precision}, ${scale})`, nullable }
-  }
-
-  if (typeNode.children.aggregateFunctionType) {
-    const aggNode = typeNode.children.aggregateFunctionType[0]
-    const funcName = findTokenOfType(aggNode, 'Identifier')?.image || ''
-    const innerType = extractType(aggNode.children.type[0]).type
-    return { type: `AggregateFunction(${funcName}, ${innerType})`, nullable }
-  }
-
-  if (typeNode.children.simpleAggregateFunctionType) {
-    const aggNode = typeNode.children.simpleAggregateFunctionType[0]
-    const funcName = findTokenOfType(aggNode, 'Identifier')?.image || ''
-    const innerType = extractType(aggNode.children.type[0]).type
-    return { type: `SimpleAggregateFunction(${funcName}, ${innerType})`, nullable }
-  }
-
-  // Simple types
-  const typeTokenNames = [
-    'UInt8', 'UInt16', 'UInt32', 'UInt64',
-    'Int8', 'Int16', 'Int32', 'Int64',
-    'Float32', 'Float64', 'String', 'Date', 'Date32', 'DateTime', 'DateTime64',
-    'UUID', 'Bool', 'IPv4', 'IPv6', 'JSONType'
-  ]
-
-  for (const tokenName of typeTokenNames) {
-    const token = findTokenOfType(typeNode, tokenName)
-    if (token) {
-      // Use the token image for the output (which is 'JSON' not 'JSONType')
-      return { type: token.image, nullable }
-    }
-  }
-
-  // Fallback to identifier
-  const identifierToken = findTokenOfType(typeNode, 'Identifier')
-  if (identifierToken) {
-    return { type: identifierToken.image, nullable }
-  }
-
-  return { type, nullable }
-}
-
-function findTokenOfType(node: any, typeName: string): IToken | null {
-  if (!node || !node.children) return null
-  for (const key of Object.keys(node.children)) {
-    const arr = node.children[key]
-    for (const item of arr) {
-      if (item.tokenType && item.tokenType.name === typeName) return item
-      const found: IToken | null = findTokenOfType(item, typeName)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-// Helper function to extract identifier value, stripping backticks if present
-function extractIdentifierValue(token: IToken): string {
-  if (token.tokenType.name === 'BacktickIdentifier') {
-    // Strip leading and trailing backticks
-    return token.image.slice(1, -1)
-  }
-  return token.image
-}
-
-// Helper function to find either Identifier or BacktickIdentifier token
-function findIdentifierToken(node: any): IToken | null {
-  return findTokenOfType(node, 'BacktickIdentifier') || findTokenOfType(node, 'Identifier')
-}
-
-function findTokensOfType(node: any, typeName: string): IToken[] {
-  const tokens: IToken[] = []
-  if (!node || !node.children) return tokens
-  for (const key of Object.keys(node.children)) {
-    const arr = node.children[key]
-    for (const item of arr) {
-      if (item.tokenType && item.tokenType.name === typeName) {
-        tokens.push(item)
-      }
-      tokens.push(...findTokensOfType(item, typeName))
-    }
-  }
-  return tokens
-}
-
-function extractExpression(node: any): string {
-  const tokens = flattenTokens(node)
-  // Sort tokens by their position in source to preserve order
-  tokens.sort((a, b) => a.startOffset - b.startOffset)
-
-  // Filter out structural keywords like PartitionBy
-  const filteredTokens = tokens.filter(t =>
-    !['PartitionBy', 'OrderBy'].includes(t.tokenType.name)
-  )
-
-  // Join tokens preserving structure
-  let result = ''
-  for (let i = 0; i < filteredTokens.length; i++) {
-    const token = filteredTokens[i]
-    const prevToken = i > 0 ? filteredTokens[i - 1] : null
-
-    // Add space before token if needed
-    if (i > 0 && prevToken) {
-      const isOperator = ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual'].includes(token.tokenType.name)
-      const prevIsOperator = ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual'].includes(prevToken.tokenType.name)
-      const isLParen = token.tokenType.name === 'LParen'
-      const isRParen = token.tokenType.name === 'RParen'
-      const isLBracket = token.tokenType.name === 'LBracket'
-      const isRBracket = token.tokenType.name === 'RBracket'
-      const isComma = token.tokenType.name === 'Comma'
-      const prevIsLParen = prevToken.tokenType.name === 'LParen'
-      const prevIsLBracket = prevToken.tokenType.name === 'LBracket'
-      const prevIsIdentifier = prevToken.tokenType.name === 'Identifier' || prevToken.tokenType.name === 'BacktickIdentifier'
-
-      // No space before/after parens when they're for function calls
-      // No space after opening paren/bracket or before closing paren/bracket or comma
-      // Space around operators
-      // Space after comma
-      // No space between identifier and opening paren (function call)
-      // No space in empty brackets []
-
-      if (isRParen || isRBracket || isComma) {
-        // No space before ), ], or ,
-      } else if (prevIsLParen || prevIsLBracket) {
-        // No space after ( or [
-      } else if ((isLParen || isLBracket) && prevIsIdentifier) {
-        // No space between identifier and ( for function calls
-      } else if (isOperator || prevIsOperator) {
-        // Check if the PREVIOUS token was a unary operator (no space after it)
-        const prevWasUnaryOperator = prevIsOperator &&
-          (prevToken.tokenType.name === 'Minus' || prevToken.tokenType.name === 'Plus') &&
-          (i === 1 || // First operator in expression
-           (i >= 2 && ['Plus', 'Minus', 'Star', 'Slash', 'Equals', 'NotEquals', 'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual', 'LParen', 'Comma'].includes(filteredTokens[i - 2].tokenType.name)))
-
-        if (!prevWasUnaryOperator) {
-          // Space around binary operators only
-          result += ' '
-        }
-      } else if (prevToken.tokenType.name === 'Comma') {
-        // Space after comma
-        result += ' '
-      } else if (!isLParen && !isLBracket) {
-        // Default: add space
-        result += ' '
-      }
-    }
-
-    // Strip backticks from BacktickIdentifier tokens
-    const tokenValue = token.tokenType.name === 'BacktickIdentifier'
-      ? token.image.slice(1, -1)
-      : token.image
-    result += tokenValue
-  }
-
-  return result
-}
-
-function flattenTokens(node: any): IToken[] {
-  const out: IToken[] = []
-  if (!node || !node.children) return out
-  for (const key of Object.keys(node.children)) {
-    const arr = node.children[key]
-    for (const item of arr) {
-      if (item.tokenType) out.push(item)
-      else out.push(...flattenTokens(item))
-    }
-  }
-  return out
-}
-
-// ========================================
-// AST Extraction Functions
-// ========================================
-
-/**
- * Extract WITH clause (CTEs)
- */
-function extractWithClause(cst: any): CTEDefinition[] {
-  const ctes: CTEDefinition[] = []
-
-  if (!cst.children.cteDefinition) {
-    return ctes
-  }
-
-  for (const cteNode of cst.children.cteDefinition) {
-    const cteDef = extractCteDefinition(cteNode)
-    if (cteDef) {
-      ctes.push(cteDef)
-    }
-  }
-
-  return ctes
-}
-
-/**
- * Extract a single CTE definition
- */
-function extractCteDefinition(cst: any): CTEDefinition | undefined {
-  const name = cst.children.Identifier[0].image
-
-  // The basicSelectStatement is inside the parentheses
-  if (!cst.children.basicSelectStatement || !cst.children.basicSelectStatement[0]) {
-    return undefined
-  }
-
-  // Extract from basicSelectStatement node
-  const selectNode = cst.children.basicSelectStatement[0]
-  const query = extractBasicSelectStatement(selectNode)
-  if (!query) {
-    return undefined
-  }
-
-  return {
-    type: 'CTE',
-    name,
-    query
-  }
-}
-
-/**
- * Extract a basic SELECT statement (used inside CTEs)
- */
-function extractBasicSelectStatement(cst: any): SelectStatement | undefined {
-  // The selectList contains the columns
-  if (!cst.children.selectList) {
-    return undefined
-  }
-
-  const selectListNode = cst.children.selectList[0]
-  const columns = extractSelectList(selectListNode)
-
-  // Build the AST
-  const result: SelectStatement = {
-    type: 'SELECT',
-    columns
-  }
-
-  // FROM clause is optional
-  if (cst.children.fromClause) {
-    result.from = extractFromClause(cst.children.fromClause[0])
-  }
-
-  // WHERE clause is optional
-  if (cst.children.whereClause) {
-    const whereExpr = extractWhereClause(cst.children.whereClause[0])
-    if (whereExpr) {
-      result.where = whereExpr
-    }
-  }
-
-  return result
-}
-
-/**
- * Extract a SELECT statement into an AST
- * Input: CST node from Chevrotain parser
- * Output: SelectStatement AST
- */
-function extractSelectStatement(cst: any): SelectStatement | undefined {
-  // Check if we have structured data (selectList exists)
-  // If we fell back to anyToken catch-all (e.g., WITH CTEs), we won't have selectList
-  if (!cst.children.selectList) {
-    // Return undefined to signal that AST extraction is not available
-    // Caller should use the string representation instead
-    return undefined
-  }
-
-  // The selectList contains the columns
-  const selectListNode = cst.children.selectList[0]
-  const columns = extractSelectList(selectListNode)
-
-  // Build the AST
-  const result: SelectStatement = {
-    type: 'SELECT',
-    columns
-  }
-
-  // WITH clause is optional (CTEs)
-  if (cst.children.withClause) {
-    const ctes = extractWithClause(cst.children.withClause[0])
-    if (ctes.length > 0) {
-      result.with = ctes
-    }
-  }
-
-  // FROM clause is optional
-  if (cst.children.fromClause) {
-    result.from = extractFromClause(cst.children.fromClause[0])
-  }
-
-  // WHERE clause is optional
-  if (cst.children.whereClause) {
-    const whereExpr = extractWhereClause(cst.children.whereClause[0])
-    if (whereExpr) {
-      result.where = whereExpr
-    }
-  }
-
-  return result
-}
-
-/**
- * Extract the list of columns being selected
- */
-function extractSelectList(cst: any): SelectColumn[] {
-  // selectColumn is an array of column nodes
-  const columnNodes = cst.children.selectColumn
-
-  return columnNodes.map((colNode: any) => extractSelectColumn(colNode))
-}
-
-/**
- * Extract a single column
- */
-function extractSelectColumn(cst: any): SelectColumn {
-  // Extract alias if present (last Identifier in the selectColumn CST)
-  let alias: string | undefined
-  if (cst.children.Identifier && cst.children.Identifier.length > 0) {
-    // The last Identifier in selectColumn is the alias (if alias was present)
-    const lastIdentifier = cst.children.Identifier[cst.children.Identifier.length - 1]
-    alias = lastIdentifier.image
-  }
-
-  // Check if it's SELECT *
-  if (cst.children.Star) {
-    return {
-      expression: {
-        type: 'COLUMN',
-        name: '*'
-      },
-      alias
-    }
-  }
-
-  // Check if it's a function call or window function
-  if (cst.children.functionCallOrWindow) {
-    return {
-      expression: extractFunctionCallOrWindow(cst.children.functionCallOrWindow[0]),
-      alias
-    }
-  }
-
-  // Check for general expression (literals, CAST, columns, etc.)
-  if (cst.children.orExpression) {
-    return {
-      expression: extractOrExpression(cst.children.orExpression[0]),
-      alias
-    }
-  }
-
-  // Fallback for complex expressions
-  return {
-    expression: {
-      type: 'COLUMN',
-      name: '(complex expression)'
-    }
-  }
-}
-
-/**
- * Extract function call AST
- */
-function extractFunctionCall(cst: any): FunctionCall {
-  const name = cst.children.Identifier[0].image
-  const args: Expression[] = []
-
-  // Handle COUNT(*), SUM(*), etc.
-  if (cst.children.Star) {
-    args.push({
-      type: 'COLUMN',
-      name: '*'
-    })
-  }
-  // Handle function with column/expression arguments
-  else if (cst.children.columnToken) {
-    // For now, we'll extract each argument group as a simple expression
-    // Split by Comma tokens to separate arguments
-    const allTokens = cst.children.columnToken
-    let currentArg: any[] = []
-
-    for (const token of allTokens) {
-      if (token.children.Comma) {
-        // End of current argument, start new one
-        if (currentArg.length > 0) {
-          // For now, just extract first identifier if simple
-          const firstToken = currentArg[0]
-          if (firstToken.children.Identifier) {
-            args.push({
-              type: 'COLUMN',
-              name: firstToken.children.Identifier[0].image
-            })
-          }
-          currentArg = []
-        }
-      } else {
-        currentArg.push(token)
-      }
-    }
-
-    // Don't forget the last argument
-    if (currentArg.length > 0) {
-      const firstToken = currentArg[0]
-      if (firstToken.children.Identifier) {
-        args.push({
-          type: 'COLUMN',
-          name: firstToken.children.Identifier[0].image
-        })
-      }
-    }
-  }
-
-  return {
-    type: 'FUNCTION_CALL',
-    name,
-    args
-  }
-}
-
-/**
- * Extract function call or window function
- */
-function extractFunctionCallOrWindow(cst: any): FunctionCall | WindowFunction {
-  // Extract the underlying function call
-  const funcCall = extractFunctionCall(cst.children.functionCall[0])
-
-  // Check if there's an OVER clause (making it a window function)
-  if (!cst.children.Over) {
-    // No OVER clause, just return the function call
-    return funcCall
-  }
-
-  // It's a window function
-  // Extract PARTITION BY expressions
-  const partitionBy: Expression[] = []
-  if (cst.children.orExpression) {
-    for (const expr of cst.children.orExpression) {
-      partitionBy.push(extractOrExpression(expr))
-    }
-  }
-
-  // Extract ORDER BY items
-  const orderBy: OrderByItem[] = []
-  if (cst.children.orderByItem) {
-    for (const item of cst.children.orderByItem) {
-      const expression = extractOrExpression(item.children.orExpression[0])
-      let direction: 'ASC' | 'DESC' | undefined
-
-      if (item.children.Asc) {
-        direction = 'ASC'
-      } else if (item.children.Desc) {
-        direction = 'DESC'
-      }
-
-      orderBy.push({
-        expression,
-        direction
-      })
-    }
-  }
-
-  return {
-    type: 'WINDOW_FUNCTION',
-    name: funcCall.name,
-    args: funcCall.args,
-    over: {
-      partitionBy: partitionBy.length > 0 ? partitionBy : undefined,
-      orderBy: orderBy.length > 0 ? orderBy : undefined
-    }
-  }
-}
-
-/**
- * Extract FROM clause
- */
-function extractFromClause(cst: any): FromClause {
-  const tableRef = extractTableRef(cst.children.tableRef[0])
-
-  return {
-    type: 'FROM',
-    table: tableRef
-  }
-}
-
-/**
- * Extract table reference
- */
-function extractTableRef(cst: any): TableRef {
-  // For now, just get the table name (single identifier)
-  const tableName = cst.children.Identifier[0].image
-
-  return {
-    type: 'TABLE',
-    name: tableName
-  }
-}
-
-/**
- * Extract WHERE clause
- */
-function extractWhereClause(cst: any): Expression | undefined {
-  if (!cst.children.orExpression || !cst.children.orExpression[0]) {
-    return undefined
-  }
-  return extractOrExpression(cst.children.orExpression[0])
-}
-
-/**
- * Extract OR expression
- */
-function extractOrExpression(cst: any): Expression {
-  const andExpressions = cst.children.andExpression
-  if (andExpressions.length === 1) {
-    // No OR, just return the AND expression
-    return extractAndExpression(andExpressions[0])
-  }
-
-  // Multiple AND expressions joined by OR
-  let result: Expression = extractAndExpression(andExpressions[0])
-  for (let i = 1; i < andExpressions.length; i++) {
-    result = {
-      type: 'BINARY_OP',
-      operator: 'OR',
-      left: result,
-      right: extractAndExpression(andExpressions[i])
-    }
-  }
-  return result
-}
-
-/**
- * Extract AND expression
- */
-function extractAndExpression(cst: any): Expression {
-  const comparisonExpressions = cst.children.comparisonExpression
-  if (comparisonExpressions.length === 1) {
-    // No AND, just return the comparison
-    return extractComparisonExpression(comparisonExpressions[0])
-  }
-
-  // Multiple comparisons joined by AND
-  let result: Expression = extractComparisonExpression(comparisonExpressions[0])
-  for (let i = 1; i < comparisonExpressions.length; i++) {
-    result = {
-      type: 'BINARY_OP',
-      operator: 'AND',
-      left: result,
-      right: extractComparisonExpression(comparisonExpressions[i])
-    }
-  }
-  return result
-}
-
-/**
- * Extract comparison expression (=, !=, <, >, etc.)
- */
-function extractComparisonExpression(cst: any): Expression {
-  const primaryValues = cst.children.primaryValue
-  if (primaryValues.length === 1) {
-    // No comparison, just a primary value
-    return extractPrimaryValue(primaryValues[0])
-  }
-
-  // Binary comparison
-  const left = extractPrimaryValue(primaryValues[0])
-  const right = extractPrimaryValue(primaryValues[1])
-
-  let operator: BinaryOp['operator'] = '='
-  if (cst.children.Equals) operator = '='
-  else if (cst.children.NotEquals) operator = '!='
-  else if (cst.children.LessThan) operator = '<'
-  else if (cst.children.GreaterThan) operator = '>'
-  else if (cst.children.LessThanOrEqual) operator = '<='
-  else if (cst.children.GreaterThanOrEqual) operator = '>='
-  else if (cst.children.In) operator = 'IN'
-
-  return {
-    type: 'BINARY_OP',
-    operator,
-    left,
-    right
-  }
-}
-
-/**
- * Extract primary value (literal, column, parameter, parenthesized expression)
- */
-function extractPrimaryValue(cst: any): Expression {
-  // String literal
-  if (cst.children.StringLiteral) {
-    const value = cst.children.StringLiteral[0].image
-    // Remove quotes
-    const unquoted = value.slice(1, -1)
-    return {
-      type: 'LITERAL',
-      valueType: 'STRING',
-      value: unquoted
-    }
-  }
-
-  // Number literal
-  if (cst.children.NumberLiteral) {
-    return {
-      type: 'LITERAL',
-      valueType: 'NUMBER',
-      value: parseFloat(cst.children.NumberLiteral[0].image)
-    }
-  }
-
-  // NULL
-  if (cst.children.Null) {
-    return {
-      type: 'LITERAL',
-      valueType: 'NULL',
-      value: null
-    }
-  }
-
-  // Parameter: {param:Type}
-  if (cst.children.parameter) {
-    return extractParameter(cst.children.parameter[0])
-  }
-
-  // Parenthesized expression
-  if (cst.children.LParen && cst.children.orExpression) {
-    return extractOrExpression(cst.children.orExpression[0])
-  }
-
-  // Simple column
-  if (cst.children.simpleColumn) {
-    const simpleCol = cst.children.simpleColumn[0]
-    const identifiers = simpleCol.children.Identifier
-
-    if (identifiers.length === 1) {
-      return {
-        type: 'COLUMN',
-        name: identifiers[0].image
-      }
-    } else {
-      return {
-        type: 'COLUMN',
-        table: identifiers[0].image,
-        name: identifiers[1].image
-      }
-    }
-  }
-
-  throw new Error('Unknown primary value type')
-}
-
-/**
- * Extract parameter: {param:Type}
- */
-function extractParameter(cst: any): ParameterRef {
-  // Get parameter name
-  const paramName = cst.children.Identifier[0].image
-
-  // Get data type (it's the type node)
-  const typeNode = cst.children.type[0]
-  const dataTypeString = extractTypeAsString(typeNode)
-
-  return {
-    type: 'PARAMETER',
-    name: paramName,
-    dataType: dataTypeString
-  }
-}
-
-/**
- * Extract type as a string (e.g., "Array(String)")
- */
-function extractTypeAsString(typeNode: any): string {
-  // Just flatten all tokens in the type and join them
-  const tokens = flattenTokens(typeNode)
-  return tokens.map(t => t.image).join('')
 }

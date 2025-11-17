@@ -14,7 +14,7 @@ export interface DDLColumn {
     engineArgs?: string
     columns: DDLColumn[]
     orderBy?: string[]
-    partitionBy?: string
+    partitionBy?: string[]
     settings?: Record<string, string>  // Engine settings
   }
 
@@ -45,13 +45,26 @@ export interface DDLColumn {
 
   export interface FromClause {
     type: 'FROM'
-    table: TableRef
+    table: TableRef | SubqueryRef
+    arrayJoin?: ArrayJoinClause
   }
 
   export interface TableRef {
     type: 'TABLE'
     database?: string
     name: string
+    alias?: string
+  }
+
+  export interface SubqueryRef {
+    type: 'SUBQUERY_TABLE'
+    query: SelectStatement
+    alias?: string
+  }
+
+  export interface ArrayJoinClause {
+    type: 'ARRAY_JOIN'
+    array: Expression
     alias?: string
   }
 
@@ -63,7 +76,7 @@ export interface DDLColumn {
 
   export interface BinaryOp {
     type: 'BINARY_OP'
-    operator: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'IN' | 'LIKE' | 'AND' | 'OR'
+    operator: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'IN' | 'NOT IN' | 'LIKE' | 'NOT LIKE' | 'AND' | 'OR' | 'IS NULL' | 'IS NOT NULL' | '+' | '-' | '*' | '/' | '%'
     left: Expression
     right: Expression
   }
@@ -96,7 +109,22 @@ export interface DDLColumn {
     }
   }
 
-  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction
+  export interface ArrayLiteral {
+    type: 'ARRAY_LITERAL'
+    elements: Expression[]
+  }
+
+  export interface TupleLiteral {
+    type: 'TUPLE_LITERAL'
+    elements: Expression[]
+  }
+
+  export interface Subquery {
+    type: 'SUBQUERY'
+    query: SelectStatement
+  }
+
+  export type Expression = ColumnRef | BinaryOp | ParameterRef | Literal | FunctionCall | WindowFunction | ArrayLiteral | TupleLiteral | Subquery
 
   export interface DDLView {
     name: string
