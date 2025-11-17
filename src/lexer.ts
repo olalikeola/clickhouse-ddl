@@ -266,7 +266,8 @@ export class Lexer {
         if (depth === 0) {
           this.advance()
           // Check if it's a parameter pattern {name:Type}
-          const match = value.match(/^\{([^:]+):(.+)\}$/)
+          // Use [\s\S] instead of . to match newlines
+          const match = value.match(/^\{([^:]+):([\s\S]+)\}$/)
           if (match) {
             return { type: 'PARAMETER', value, ...start }
           }

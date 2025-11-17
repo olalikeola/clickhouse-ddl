@@ -728,7 +728,8 @@ export class Parser {
     if (this.check('PARAMETER')) {
       const param = this.current().value
       this.advance()
-      const match = param.match(/^\{([^:]+):(.+)\}$/)
+      // Use [\s\S] instead of . to match newlines
+      const match = param.match(/^\{([^:]+):([\s\S]+)\}$/)
       if (match) {
         return {
           type: 'PARAMETER',
